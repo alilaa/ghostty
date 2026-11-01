@@ -24,10 +24,15 @@ The Arch package also includes makepkg's `.BUILDINFO` dependency versions.
 It uses GitHub-hosted runners and the repository token; no upstream release
 secrets are needed. See [installation and Neovim setup](RELEASE.md).
 
+Ubuntu's packaged Blueprint compiler is older than this checkout requires;
+CI installs checksum-verified Blueprint 0.22.2 from GNOME's release sources.
+The release profile loads its palette relative to its own config file, so it
+also works with an empty user configuration directory.
+
 From a clean, committed checkout with GitHub SSH authentication:
 
 ```sh
-bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-2
+bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-3
 ```
 
 This pushes the current branch and release tag. The package's command is

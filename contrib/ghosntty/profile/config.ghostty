@@ -1,6 +1,7 @@
 # GhosnTTy: a compact Linux profile based on WezTerm.
 class = com.ghosntty.GhosnTTy
-theme = Kanagawa-WezTerm
+# Load the bundled palette relative to this file, including on fresh installs.
+config-file = themes/Kanagawa-WezTerm
 
 font-family = JetBrainsMono Nerd Font Mono
 font-family = JetBrains Mono
