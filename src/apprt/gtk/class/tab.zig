@@ -17,6 +17,7 @@ const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
 const TitleDialog = @import("title_dialog.zig").TitleDialog;
 const Overrides = @import("Overrides.zig");
+const project_colors = @import("../project_colors.zig");
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -166,6 +167,9 @@ pub const Tab = extern struct {
         /// The manually overridden title.
         title_override: ?[:0]const u8 = null,
 
+        /// Chosen once per tab; spinner frames and attention states reuse it.
+        codex_color: ?u24 = null,
+
         /// The tooltip of this tab. This is usually bound to the active surface.
         tooltip: ?[:0]const u8 = null,
 
@@ -250,6 +254,15 @@ pub const Tab = extern struct {
     /// Stable identity before display decorations such as bell/zoom markers.
     pub fn getTitleOverride(self: *Self) ?[:0]const u8 {
         return self.private().title_override;
+    }
+
+    pub fn getCodexColor(self: *Self) u24 {
+        const priv = self.private();
+        if (priv.codex_color) |color| return color;
+        const index: usize = @intCast(glib.randomIntRange(0, project_colors.palette.len));
+        const color = project_colors.palette[index];
+        priv.codex_color = color;
+        return color;
     }
 
     /// Overridden title. This will be generally be shown over the title

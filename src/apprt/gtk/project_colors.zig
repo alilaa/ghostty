@@ -14,9 +14,9 @@ pub fn forProject(name: []const u8) u24 {
     return palette[hash % palette.len];
 }
 
-pub fn background(project: []const u8, pane_title: []const u8, codex_process: bool) u24 {
+pub fn background(project: []const u8, pane_title: []const u8, codex_process: bool, codex_color: u24) u24 {
     if (!codex_process and !isCodex(pane_title)) return forProject(project);
-    return if (needsInput(pane_title)) 0xff3b30 else 0x10a37f;
+    return if (needsInput(pane_title)) 0xff3b30 else codex_color;
 }
 
 pub fn isCodexExecutable(path: []const u8) bool {
@@ -67,9 +67,9 @@ pub fn hover(color: u24) u24 {
 
 test "project colors preserve WezTerm hash results" {
     try std.testing.expectEqual(@as(u24, 0xffd866), forProject("ghostty"));
-    try std.testing.expectEqual(@as(u24, 0x10a37f), background("repo", "⠋ Codex", false));
-    try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ ! ] Codex", false));
-    try std.testing.expectEqual(forProject("repo"), background("repo", "codexical", false));
+    try std.testing.expectEqual(palette[0], background("repo", "⠋ Codex", false, palette[0]));
+    try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ ! ] Codex", false, palette[0]));
+    try std.testing.expectEqual(forProject("repo"), background("repo", "codexical", false, palette[0]));
     try std.testing.expectEqual(@as(u24, 0xffffff), foreground(0));
     try std.testing.expectEqual(@as(u24, 0x1e1e1e), foreground(0xffffff));
     try std.testing.expectEqual(@as(u24, 0xffffff), hover(0xffffff));
@@ -85,15 +85,18 @@ test "project colors recognize the Codex executable rather than parent directory
 }
 
 test "project colors stay fixed through Codex spinner frames without its name" {
-    for ([_][]const u8{ "⠋ Working", "⠙ Working", "⠹ Working", "[|] Working", "[/] Working", "[-] Working", "[\\] Working" }) |title| {
-        const bg = background(title, title, true);
-        try std.testing.expectEqual(@as(u24, 0x10a37f), bg);
-        try std.testing.expectEqual(foreground(0x10a37f), foreground(bg));
-        // An explicit project title must not change the Codex status color.
-        try std.testing.expectEqual(bg, background("stable repo", title, true));
+    for (palette) |color| {
+        for ([_][]const u8{ "⠋ Working", "⠙ Working", "⠹ Working", "[|] Working", "[/] Working", "[-] Working", "[\\] Working" }) |title| {
+            const bg = background(title, title, true, color);
+            try std.testing.expectEqual(color, bg);
+            try std.testing.expectEqual(foreground(color), foreground(bg));
+            try std.testing.expectEqual(bg, background("stable repo", title, true, color));
+        }
+        try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ ! ] Approval needed", true, color));
+        try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ . ] Ready", true, color));
+        // Resuming work restores this tab's original color, without rerolling.
+        try std.testing.expectEqual(color, background("repo", "Working", true, color));
     }
-    try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ ! ] Approval needed", true));
-    try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ . ] Ready", true));
     // Leaving Codex restores the normal deterministic project palette.
-    try std.testing.expectEqual(forProject("repo"), background("repo", "zsh", false));
+    try std.testing.expectEqual(forProject("repo"), background("repo", "zsh", false, palette[0]));
 }

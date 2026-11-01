@@ -134,7 +134,7 @@ fn background(page: *adw.TabPage, tab: *Tab) u24 {
     const pane_title: []const u8 = if (surface) |s| s.getTitle() orelse "" else "";
     const codex_process = if (surface) |s| s.isForegroundCodex() else false;
     const identity: []const u8 = tab.getTitleOverride() orelse std.mem.span(page.getTitle());
-    return colors.background(identity, pane_title, codex_process);
+    return colors.background(identity, pane_title, codex_process, tab.getCodexColor());
 }
 
 fn selectPage(button: *gtk.Button, page: *adw.TabPage) callconv(.c) void {
