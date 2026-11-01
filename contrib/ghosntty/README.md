@@ -16,7 +16,7 @@ secrets are needed. See [installation and Neovim setup](RELEASE.md).
 From a clean, committed checkout with GitHub SSH authentication:
 
 ```sh
-bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-1
+bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-2
 ```
 
 This pushes the current branch and release tag. The package's command is
@@ -68,11 +68,14 @@ override the changing pane title, so a Codex spinner does not change identity.
 
 `gtk-project-tabs` uses a separate GTK strip backed by the existing AdwTabView.
 It preserves the sixteen-color djb2 palette, contrasting text, hover tint,
-active marker, and Codex title-based green/red states. The compact strip keeps close buttons and omits the new-tab button; use
-Ctrl+Shift+U to open tabs. Closing uses the existing tab lifecycle. Keyboard tab switching and reordering continue
+active marker, and Codex green/red states. The compact strip keeps close
+buttons and omits the new-tab button; use Ctrl+Shift+U to open tabs. Closing
+uses the existing tab lifecycle. Keyboard tab switching and reordering continue
 to use Ghostty actions. The custom strip does not yet implement drag-to-reorder,
-drag-to-detach, or the native tab context menu. Codex detection currently uses
-the pane title; foreground-process fallback is not yet implemented.
+drag-to-detach, or the native tab context menu. On Linux, Codex detection checks
+the PTY foreground executable as well as the pane title, so spinner titles
+without the word Codex retain the same color. Attention markers still turn
+the tab red. Title-only updates reuse existing buttons and stylesheets.
 
 `gtk-editor-control` exports the versioned D-Bus interface
 `com.ghosntty.GhosnTTy.EditorControl1` at `/com/ghosntty/GhosnTTy/EditorControl`.

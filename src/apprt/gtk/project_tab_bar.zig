@@ -34,8 +34,8 @@ pub fn widget(self: *Self) *gtk.Widget {
 }
 
 pub fn refresh(self: *Self) void {
-    // Codex changes its pane title for each spinner frame. Once a project
-    // title is set, those frames must not rebuild every button and stylesheet.
+    // Hash structure and colors, not animated titles. Update labels in place
+    // so a spinner never recreates styled buttons or restarts hover effects.
     var hash = std.hash.Wyhash.init(0);
     const selected = self.view.getSelectedPage();
     var n: c_int = 0;
@@ -45,14 +45,25 @@ pub fn refresh(self: *Self) void {
         const active = page == selected;
         hash.update(std.mem.asBytes(&id));
         hash.update(std.mem.asBytes(&active));
-        hash.update(std.mem.span(page.getTitle()));
         const tab = gobject.ext.cast(Tab, page.getChild()) orelse continue;
         // Widen before hashing so the padding bits of u24 are not included.
         const bg: u32 = background(page, tab);
         hash.update(std.mem.asBytes(&bg));
     }
     const fingerprint = hash.final();
-    if (self.fingerprint == fingerprint) return;
+    if (self.fingerprint == fingerprint) {
+        var group = self.box.as(gtk.Widget).getFirstChild();
+        var i: c_int = 0;
+        while (i < self.view.getNPages()) : (i += 1) {
+            const current = group orelse break;
+            const child = current.getFirstChild() orelse break;
+            const button = gobject.ext.cast(gtk.Button, child) orelse break;
+            const page = self.view.getNthPage(i);
+            updateTitle(button, page, page == selected);
+            group = current.getNextSibling();
+        }
+        return;
+    }
     self.fingerprint = fingerprint;
     // This traverses our own box, never libadwaita's private tab widgets.
     while (self.box.as(gtk.Widget).getFirstChild()) |child| self.box.remove(child);
@@ -60,7 +71,6 @@ pub fn refresh(self: *Self) void {
     while (i < self.view.getNPages()) : (i += 1) {
         const page = self.view.getNthPage(i);
         const tab = gobject.ext.cast(Tab, page.getChild()) orelse continue;
-        const title = std.mem.span(page.getTitle());
         const bg = background(page, tab);
         const fg = colors.foreground(bg);
         const active = page == selected;
@@ -84,11 +94,8 @@ pub fn refresh(self: *Self) void {
         const label = gtk.Label.new(null);
         label.setEllipsize(.end);
         label.setMaxWidthChars(32);
-        var label_buf: [4096]u8 = undefined;
-        const text = std.mem.printSentinel(&label_buf, "{s}{s}", .{ if (active) "● " else "  ", title }, 0) catch "";
-        label.setText(text);
         button.setChild(label.as(gtk.Widget));
-        button.as(gtk.Widget).setTooltipText(page.getTitle());
+        updateTitle(button, page, active);
         _ = gtk.Button.signals.clicked.connect(button, *adw.TabPage, selectPage, page, .{});
         const group = gtk.Box.new(.horizontal, 0);
         group.append(button.as(gtk.Widget));
@@ -110,13 +117,24 @@ const compact_css =
     "border: none; border-radius: 0; box-shadow: none; " ++
     "margin: 0; padding: 1px 6px; } ";
 
+fn updateTitle(button: *gtk.Button, page: *adw.TabPage, active: bool) void {
+    const label = gobject.ext.cast(gtk.Label, button.getChild() orelse return) orelse return;
+    var label_buf: [4096]u8 = undefined;
+    const text = std.mem.printSentinel(&label_buf, "{s}{s}", .{
+        if (active) @as([]const u8, "● ") else "  ",
+        std.mem.span(page.getTitle()),
+    }, 0) catch "";
+    if (std.mem.eql(u8, std.mem.span(label.getText()), text)) return;
+    label.setText(text);
+    button.as(gtk.Widget).setTooltipText(page.getTitle());
+}
+
 fn background(page: *adw.TabPage, tab: *Tab) u24 {
-    const pane_title: []const u8 = if (tab.getActiveSurface()) |surface|
-        surface.getTitle() orelse ""
-    else
-        "";
+    const surface = tab.getActiveSurface();
+    const pane_title: []const u8 = if (surface) |s| s.getTitle() orelse "" else "";
+    const codex_process = if (surface) |s| s.isForegroundCodex() else false;
     const identity: []const u8 = tab.getTitleOverride() orelse std.mem.span(page.getTitle());
-    return colors.background(identity, pane_title);
+    return colors.background(identity, pane_title, codex_process);
 }
 
 fn selectPage(button: *gtk.Button, page: *adw.TabPage) callconv(.c) void {

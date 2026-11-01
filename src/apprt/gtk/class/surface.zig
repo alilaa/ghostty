@@ -43,6 +43,7 @@ const global = @import("../../../global.zig");
 const gtk_version = @import("../gtk_version.zig");
 const Overrides = @import("Overrides.zig");
 const scale_util = @import("../scale.zig");
+const project_colors = @import("../project_colors.zig");
 const DesktopNotifications = @import("../desktop_notifications.zig");
 
 const log = std.log.scoped(.gtk_ghostty_surface);
@@ -2097,6 +2098,28 @@ pub const Surface = extern struct {
     /// Returns the title property without a copy.
     pub fn getTitle(self: *Self) ?[:0]const u8 {
         return self.private().title;
+    }
+
+    /// Identify Codex independently of its animated OSC title. Query the PTY's
+    /// foreground job so returning to the shell immediately restores colors.
+    /// This only reads procfs; no commands are launched from tab rendering.
+    pub fn isForegroundCodex(self: *Self) bool {
+        if (comptime @import("builtin").os.tag != .linux) return false;
+        const core_surface = self.core() orelse return false;
+        const pid = core_surface.getProcessInfo(.foreground_pid) orelse return false;
+        if (pid == 0) return false;
+        var path_buf: [64]u8 = undefined;
+        const path = std.mem.print(&path_buf, "/proc/{d}/exe", .{pid}) catch return false;
+        var executable: [std.Io.Dir.max_path_bytes]u8 = undefined;
+        if (std.Io.Dir.readLinkAbsolute(global.io(), path, &executable)) |len| {
+            return project_colors.isCodexExecutable(executable[0..len]);
+        } else |_| {
+            // The task name is still available on systems restricting exe links.
+            const comm_path = std.mem.print(&path_buf, "/proc/{d}/comm", .{pid}) catch return false;
+            var comm_buf: [32]u8 = undefined;
+            const comm = std.Io.Dir.cwd().readFile(global.io(), comm_path, &comm_buf) catch return false;
+            return project_colors.isCodexExecutable(std.mem.trimEnd(u8, comm, "\n"));
+        }
     }
 
     /// Returns the effective title: the user-overridden title if set,

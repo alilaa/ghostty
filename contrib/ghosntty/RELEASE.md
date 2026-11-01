@@ -1,6 +1,7 @@
 GhosnTTy for **Ubuntu 26.04, x86-64**.
 
 - Compact project-colored bottom tabs; no new-tab button. Use Ctrl+Shift+U.
+- Stable Codex colors across spinner titles, with red attention states.
 - Ctrl+H/J/K/L navigation and Ctrl+Arrow resizing across Neovim and terminal splits.
 - Kanagawa palette and a bundled WezTerm-style profile on fresh installs.
 
