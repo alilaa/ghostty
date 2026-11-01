@@ -2,7 +2,7 @@
 
 Linux Ghostty fork with compact project-colored bottom tabs and Neovim
 navigation. See the [setup guide](contrib/ghosntty/README.md) and
-[Ubuntu 26.04 install notes](contrib/ghosntty/RELEASE.md).
+[Arch and Ubuntu 26.04 install notes](contrib/ghosntty/RELEASE.md).
 Builds are published in this fork's [releases](https://github.com/alilaa/ghostty/releases).
 
 The upstream Ghostty documentation follows.

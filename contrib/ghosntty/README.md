@@ -5,11 +5,22 @@ and editor navigation for the GTK application. Both options default to false.
 The implementation was written with OpenAI Codex; desktop validation is still
 required before using it as the daily terminal.
 
-## Ubuntu 26.04 release
+## Arch and Ubuntu releases
 
-The `GhosnTTy Ubuntu release` workflow builds and tests on native Ubuntu 26.04
-x86-64, packages a `.deb`, checks its installation and desktop D-Bus integration,
-and publishes it with SHA256 checksums after a `ghosntty-v*` release tag is pushed.
+The `GhosnTTy Linux releases` workflow builds x86-64 packages for:
+
+| Platform | Build environment | Package |
+| --- | --- | --- |
+| Arch Linux | Official Arch container, repositories pinned to 2026/10/01 | `.pkg.tar.zst` |
+| Ubuntu 26.04 | Native Ubuntu 26.04 runner | `.deb` |
+
+The Arch snapshot matches this desktop's GTK 4.22.5, GLib 2.88.3, and glibc
+2.44 package versions. Both builds use Zig 0.17.0 and a baseline x86-64 CPU.
+Each job tests the binary and adapters, installs its native package, and checks
+desktop D-Bus integration. Branch pushes and manual runs produce downloadable
+Actions artifacts. Pushing a `ghosntty-v*` tag publishes both packages together
+after both jobs pass, with SHA256 checksums and library/build manifests.
+The Arch package also includes makepkg's `.BUILDINFO` dependency versions.
 It uses GitHub-hosted runners and the repository token; no upstream release
 secrets are needed. See [installation and Neovim setup](RELEASE.md).
 
@@ -68,13 +79,15 @@ override the changing pane title, so a Codex spinner does not change identity.
 
 `gtk-project-tabs` uses a separate GTK strip backed by the existing AdwTabView.
 It preserves the sixteen-color djb2 palette, contrasting text, hover tint,
-active marker, and Codex green/red states. The compact strip keeps close
+active marker, and Codex attention states. Each tab receives one random palette
+color for Codex, retained through spinner updates and attention/resume cycles.
+Only the attention state overrides it with red. The compact strip keeps close
 buttons and omits the new-tab button; use Ctrl+Shift+U to open tabs. Closing
 uses the existing tab lifecycle. Keyboard tab switching and reordering continue
 to use Ghostty actions. The custom strip does not yet implement drag-to-reorder,
 drag-to-detach, or the native tab context menu. On Linux, Codex detection checks
 the PTY foreground executable as well as the pane title, so spinner titles
-without the word Codex retain the same color. Attention markers still turn
+without the word Codex retain that tab's color. Attention markers still turn
 the tab red. Title-only updates reuse existing buttons and stylesheets.
 
 `gtk-editor-control` exports the versioned D-Bus interface

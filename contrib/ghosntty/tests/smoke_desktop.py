@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the installed package under xvfb-run + dbus-run-session in Ubuntu CI."""
+"""Run either installed native package under xvfb-run + dbus-run-session."""
 import json
 import os
 from pathlib import Path
@@ -62,7 +62,8 @@ with tempfile.TemporaryDirectory(prefix="ghosntty-smoke-") as temporary:
         assert not execute(surface, "project", "invalid\nidentity")
         # This uses the default branded application ID and object path.
         subprocess.run(
-            ["ghosntty", "+new-tab", "-e", "/usr/bin/python3", "-c", child, str(second)],
+            ["ghosntty", "+new-tab", f"--surface-id={surface}",
+             "-e", "/usr/bin/python3", "-c", child, str(second)],
             check=True, timeout=15,
         )
         other = wait_child(second)
