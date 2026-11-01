@@ -49,6 +49,7 @@ const media = @import("../media.zig");
 const Overrides = @import("Overrides.zig");
 
 const log = std.log.scoped(.gtk_ghostty_application);
+const editor_control = @import("../editor_control.zig");
 
 extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
 
@@ -222,6 +223,8 @@ pub const Application = extern struct {
 
         /// Providers for loading custom stylesheets defined by user
         custom_css_providers: std.ArrayListUnmanaged(*gtk.CssProvider) = .empty,
+
+        editor_control_id: c_uint = 0,
 
         /// A copy of the LANG environment variable that was provided to Ghostty
         /// by the system. If this is null, the LANG environment variable did
@@ -483,6 +486,10 @@ pub const Application = extern struct {
     /// this wherever possible so we get leak detection in debug/tests.
     pub fn allocator(self: *Self) std.mem.Allocator {
         return self.private().core_app.alloc;
+    }
+
+    pub fn editorControlEnabled(self: *Self) bool {
+        return self.private().editor_control_id != 0;
     }
 
     /// Get the original language that Ghostty was launched with. This returns a
@@ -1352,6 +1359,15 @@ pub const Application = extern struct {
         // Setup our action map
         self.startupActionMap();
 
+        if (self.private().config.get().@"gtk-editor-control") {
+            if (self.as(gio.Application).getDbusConnection()) |connection| {
+                self.private().editor_control_id = editor_control.register(self, connection) catch |err| blk: {
+                    log.warn("editor control unavailable: {t}", .{err});
+                    break :blk 0;
+                };
+            }
+        }
+
         // Setup our global shortcuts
         self.startupGlobalShortcuts();
 
@@ -1523,6 +1539,13 @@ pub const Application = extern struct {
 
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
+
+        if (priv.editor_control_id != 0) {
+            if (self.as(gio.Application).getDbusConnection()) |connection| {
+                _ = connection.unregisterObject(priv.editor_control_id);
+            }
+            priv.editor_control_id = 0;
+        }
         if (priv.config_errors_dialog.get()) |diag| {
             diag.close();
             diag.unref(); // strong ref from get()

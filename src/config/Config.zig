@@ -3860,6 +3860,15 @@ else
 /// which is the old style.
 @"gtk-wide-tabs": bool = true,
 
+/// Enable the experimental Linux editor-control D-Bus interface. Editors can
+/// request pane navigation/resizing and assign a stable project tab title.
+/// Requires restarting Ghostty. Disabled by default in this fork.
+@"gtk-editor-control": bool = false,
+
+/// Render project-colored GTK tabs using the deterministic project palette.
+/// Tab placement still follows `gtk-tabs-location`.
+@"gtk-project-tabs": bool = false,
+
 /// If `true` (default), then two-finger horizontal scrolling on a touchpad
 /// will switch between tabs. Scrolling left goes to the next tab and
 /// scrolling right goes to the previous tab. Set this to `false` to

@@ -161,6 +161,11 @@ child_exited: bool = false,
 /// to let us know.
 focused: bool = true,
 
+/// Only the editor-control integration owns these flags. A release can be
+/// deferred until a user's modal key table above ours is popped.
+editor_navigation_owned: bool = false,
+editor_navigation_release_pending: bool = false,
+
 /// Whether this surface may be visible. Unknown visibility is considered
 /// visible so reporting remains conservative.
 visible: bool = true,
@@ -1196,6 +1201,9 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         },
 
         .stop_command => |v| timer: {
+            // Shell integration also restores normal navigation after an
+            // editor crashes or is killed without running its exit hooks.
+            _ = self.setEditorNavigation(false);
             const end: std.Io.Timestamp = .now(global.io(), .awake);
             const start = self.command_timer orelse break :timer;
             self.command_timer = null;
@@ -1838,6 +1846,7 @@ pub fn updateConfig(
     // If we are in the middle of a key sequence, clear it.
     self.endKeySequence(.drop, .free);
 
+    const editor_navigation_owned = self.editor_navigation_owned;
     // Deactivate all key tables since they may have changed. Importantly,
     // we store pointers into the config as part of our table stack so
     // we can't keep them active across config changes. But this behavior
@@ -1845,6 +1854,9 @@ pub fn updateConfig(
     _ = self.deactivateAllKeyTables() catch |err| {
         log.warn("failed to deactivate key tables err={}", .{err});
     };
+    // Re-resolve our integration table in the new config instead of retaining
+    // a pointer into the old one or silently losing navigation after reload.
+    if (editor_navigation_owned) _ = self.setEditorNavigation(true);
 
     // Before sending any other config changes, we give the renderer a new font
     // grid. We could check to see if there was an actual change to the font,
@@ -3219,6 +3231,8 @@ fn maybeHandleBinding(
 }
 
 fn deactivateAllKeyTables(self: *Surface) !bool {
+    self.editor_navigation_owned = false;
+    self.editor_navigation_release_pending = false;
     switch (self.keyboard.table_stack.items.len) {
         // No key table active. This does nothing.
         0 => return false,
@@ -4928,6 +4942,37 @@ fn showMouse(self: *Surface) void {
     };
 }
 
+/// Claim the dedicated editor table without clearing unrelated key tables.
+/// The integration owns this table; user tables may temporarily sit above it.
+pub fn setEditorNavigation(self: *Surface, enabled: bool) bool {
+    const set = self.config.keybind.tables.getPtr("smart-splits") orelse return false;
+    const items = self.keyboard.table_stack.items;
+    const active = items.len > 0 and items[items.len - 1].set == set;
+    if (enabled) {
+        if (active) {
+            self.editor_navigation_owned = true;
+            self.editor_navigation_release_pending = false;
+            return true;
+        }
+        // Do not duplicate the editor table underneath another modal table.
+        for (items) |entry| if (entry.set == set) return false;
+        const performed = self.performBindingAction(.{ .activate_key_table = "smart-splits" }) catch false;
+        self.editor_navigation_owned = performed;
+        self.editor_navigation_release_pending = false;
+        return performed;
+    }
+    if (!self.editor_navigation_owned and !self.editor_navigation_release_pending) return false;
+    self.editor_navigation_owned = false;
+    self.editor_navigation_release_pending = false;
+    if (!active) {
+        for (items) |entry| {
+            if (entry.set == set) self.editor_navigation_release_pending = true;
+        }
+        return self.editor_navigation_release_pending;
+    }
+    return self.performBindingAction(.deactivate_key_table) catch false;
+}
+
 /// Perform a binding action. A binding is a keybinding. This function
 /// must be called from the GUI thread.
 ///
@@ -5737,6 +5782,7 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
                     .{err},
                 );
             };
+            if (self.editor_navigation_release_pending) _ = self.setEditorNavigation(false);
         },
 
         .deactivate_all_key_tables => {

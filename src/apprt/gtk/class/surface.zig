@@ -1608,6 +1608,15 @@ pub const Surface = extern struct {
             try global.environMap();
         errdefer env.deinit();
 
+        // A unique bus name addresses this process even when several Ghostty
+        // builds or application classes are running side by side.
+        _ = env.orderedRemove("GHOSTTY_CONTROL_BUS");
+        if (app.editorControlEnabled()) {
+            if (app.as(gio.Application).getDbusConnection()) |connection| {
+                if (connection.getUniqueName()) |name| try env.put("GHOSTTY_CONTROL_BUS", std.mem.span(name));
+            }
+        }
+
         if (app.savedLanguage()) |language| {
             try env.put("LANG", language);
         } else {
