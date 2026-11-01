@@ -247,6 +247,11 @@ pub const Tab = extern struct {
     //---------------------------------------------------------------
     // Properties
 
+    /// Stable identity before display decorations such as bell/zoom markers.
+    pub fn getTitleOverride(self: *Self) ?[:0]const u8 {
+        return self.private().title_override;
+    }
+
     /// Overridden title. This will be generally be shown over the title
     /// unless this is unset (null).
     pub fn setTitleOverride(self: *Self, title: ?[:0]const u8) void {

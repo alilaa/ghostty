@@ -30,6 +30,7 @@ const CommandPalette = @import("command_palette.zig").CommandPalette;
 const WeakRef = @import("../weak_ref.zig").WeakRef;
 const TitleDialog = @import("title_dialog.zig").TitleDialog;
 const Overrides = @import("Overrides.zig");
+const ProjectTabBar = @import("../project_tab_bar.zig");
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -297,6 +298,7 @@ pub const Window = extern struct {
         // Template bindings
         tab_overview: *adw.TabOverview,
         tab_bar: *adw.TabBar,
+        project_bar: ?ProjectTabBar = null,
         tab_view: *adw.TabView,
         toolbar: *adw.ToolbarView,
         toast_overlay: *adw.ToastOverlay,
@@ -345,6 +347,8 @@ pub const Window = extern struct {
         // We initialize our windowing protocol to none because we can't
         // actually initialize this until we get realized.
         priv.winproto = .none;
+        priv.project_bar = ProjectTabBar.init(priv.tab_view);
+        _ = adw.TabView.signals.page_reordered.connect(priv.tab_view, *Self, projectPageReordered, self, .{});
 
         // Add our dev CSS class if we're in debug mode.
         if (comptime build_config.is_debug) {
@@ -726,10 +730,44 @@ pub const Window = extern struct {
             .bottom => priv.toolbar.addBottomBar(priv.tab_bar.as(gtk.Widget)),
         }
 
+        if (priv.project_bar) |*bar| {
+            if (bar.widget().getParent() != null) priv.toolbar.remove(bar.widget());
+            switch (config.@"gtk-tabs-location") {
+                .top => priv.toolbar.addTopBar(bar.widget()),
+                .bottom => priv.toolbar.addBottomBar(bar.widget()),
+            }
+        }
+        self.refreshProjectTabs();
+
         // Do our window-protocol specific appearance sync.
         priv.winproto.syncAppearance() catch |err| {
             log.warn("failed to sync winproto appearance error={}", .{err});
         };
+    }
+
+    pub fn refreshProjectTabs(self: *Self) void {
+        const priv = self.private();
+        const config = if (priv.config) |v| v.get() else return;
+        const bar = if (priv.project_bar) |*v| v else return;
+        const visible = config.@"gtk-project-tabs" and switch (config.@"window-show-tab-bar") {
+            .never => false,
+            .auto => priv.tab_view.getNPages() > 1,
+            .always => true,
+        };
+        bar.widget().setVisible(@intFromBool(visible));
+        if (config.@"gtk-project-tabs") bar.refresh();
+    }
+
+    fn projectTabNotify(_: *Tab, _: *gobject.ParamSpec, self: *Self) callconv(.c) void {
+        self.refreshProjectTabs();
+    }
+
+    fn projectSurfaceNotify(_: *Surface, _: *gobject.ParamSpec, self: *Self) callconv(.c) void {
+        self.refreshProjectTabs();
+    }
+
+    fn projectPageReordered(_: *adw.TabView, _: *adw.TabPage, _: c_int, self: *Self) callconv(.c) void {
+        self.refreshProjectTabs();
     }
 
     /// Sync the state of any actions on this window.
@@ -794,6 +832,8 @@ pub const Window = extern struct {
         var it = tree.iterator();
         while (it.next()) |entry| {
             const surface = entry.view;
+            // A fixed project title can stay unchanged while the pane's
+            // Codex status title changes, so observe the pane independently.
             // Before adding any new signal handlers, disconnect any that we may
             // have added before. Otherwise we may get multiple handlers for the
             // same signal.
@@ -806,6 +846,8 @@ pub const Window = extern struct {
                 null,
                 self,
             );
+
+            _ = gobject.Object.signals.notify.connect(surface, *Self, projectSurfaceNotify, self, .{ .detail = "title" });
 
             _ = Surface.signals.@"present-request".connect(
                 surface,
@@ -1125,6 +1167,7 @@ pub const Window = extern struct {
     fn getTabsVisible(self: *Self) bool {
         const priv = self.private();
         const config = if (priv.config) |v| v.get() else return true;
+        if (config.@"gtk-project-tabs") return false;
 
         switch (config.@"gtk-titlebar-style") {
             .tabs => {
@@ -1426,6 +1469,12 @@ pub const Window = extern struct {
     fn dispose(self: *Self) callconv(.c) void {
         const priv = self.private();
 
+        if (priv.project_bar) |*bar| {
+            if (bar.widget().getParent() != null) priv.toolbar.remove(bar.widget());
+            bar.deinit();
+            priv.project_bar = null;
+        }
+
         if (priv.handle_active_state_source) |v| {
             if (glib.Source.remove(v) == 0) {
                 log.warn("unable to remove handle active state source", .{});
@@ -1703,6 +1752,7 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
+        self.refreshProjectTabs();
 
         // Always reset our binding source in case we have no pages.
         priv.tab_bindings.setSource(null);
@@ -1730,6 +1780,9 @@ pub const Window = extern struct {
         // Get the attached page which must be a Tab object.
         const child = page.getChild();
         const tab = gobject.ext.cast(Tab, child) orelse return;
+
+        _ = gobject.Object.signals.notify.connect(tab, *Self, projectTabNotify, self, .{ .detail = "title" });
+        _ = gobject.Object.signals.notify.connect(tab, *Self, projectTabNotify, self, .{ .detail = "active-surface" });
 
         // Attach listeners for the tab.
         _ = Tab.signals.@"close-request".connect(
@@ -1845,6 +1898,7 @@ pub const Window = extern struct {
         self: *Self,
     ) callconv(.c) void {
         const priv = self.private();
+        self.refreshProjectTabs();
         if (priv.tab_view.getNPages() == 0) {
             // If we have no pages left then we want to close window.
 

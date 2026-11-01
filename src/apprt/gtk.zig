@@ -16,4 +16,6 @@ test {
     _ = @import("gtk/key.zig");
     _ = @import("gtk/portal.zig");
     _ = @import("gtk/scale.zig");
+    _ = @import("gtk/control_request.zig");
+    _ = @import("gtk/project_colors.zig");
 }
