@@ -1,5 +1,5 @@
 -- Run from the repository root, once with GHOSTTY_TEST_BACKEND=v2 and v3.
-local root = vim.uv.cwd() .. "/contrib/anton"
+local root = vim.uv.cwd() .. "/contrib/ghosntty"
 vim.opt.runtimepath:append(root .. "/nvim")
 vim.env.GHOSTTY_CONTROL_BUS = ":1.42"
 vim.env.GHOSTTY_SURFACE_ID = "0xfedcba9876543210"

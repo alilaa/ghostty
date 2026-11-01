@@ -10,12 +10,12 @@ const Tab = @import("class/tab.zig").Tab;
 const request = @import("control_request.zig");
 const ext = @import("ext.zig");
 
-pub const path = "/com/anton/Ghostty/EditorControl";
-pub const interface = "com.anton.Ghostty.EditorControl1";
+pub const path = "/com/ghosntty/GhosnTTy/EditorControl";
+pub const interface = "com.ghosntty.GhosnTTy.EditorControl1";
 pub const key_table = "smart-splits";
 
 const xml =
-    \\<node><interface name="com.anton.Ghostty.EditorControl1">
+    \\<node><interface name="com.ghosntty.GhosnTTy.EditorControl1">
     \\  <method name="Execute">
     \\    <arg name="surface" type="t" direction="in"/>
     \\    <arg name="operation" type="s" direction="in"/>

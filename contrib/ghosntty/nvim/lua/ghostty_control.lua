@@ -104,7 +104,7 @@ function M.setup(opts)
   if splits.PROTOCOL_VERSION then
     splits.setup({ mux = { backend = backend }, move = { at_edge = "stop" } })
   else
-    -- Compatibility with the version pinned in Anton's existing dotfiles.
+    -- Compatibility with older smart-splits versions.
     -- This process is in Ghostty; WezTerm sessions keep their original setup.
     local mux = require("smart-splits.mux")
     mux.__mux = {

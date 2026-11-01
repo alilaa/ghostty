@@ -1,5 +1,5 @@
 -- Supply GHOSTTY_SMART_SPLITS_PATH with the pinned smart-splits checkout.
-local root = vim.uv.cwd() .. "/contrib/anton"
+local root = vim.uv.cwd() .. "/contrib/ghosntty"
 vim.opt.runtimepath:append(vim.env.GHOSTTY_SMART_SPLITS_PATH)
 vim.opt.runtimepath:append(root .. "/nvim")
 vim.env.GHOSTTY_CONTROL_BUS = ":1.42"

@@ -1,0 +1,87 @@
+name: GhosnTTy Ubuntu release
+on:
+  push:
+    tags: ['ghosntty-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ghosntty-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ubuntu:
+    if: github.repository == 'alilaa/ghostty'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl pkg-config gettext \
+            blueprint-compiler libadwaita-1-dev libgtk-4-dev libgtk4-layer-shell-dev \
+            libbz2-dev libonig-dev libxml2-utils libfreetype-dev libfontconfig-dev \
+            libharfbuzz-dev libpng-dev zlib1g-dev python3-gi neovim dpkg-dev \
+            desktop-file-utils xvfb xauth dbus-x11 libgl1-mesa-dri
+      - name: Install Zig 0.17.0
+        run: |
+          curl --fail --location --retry 3 https://ziglang.org/download/0.17.0/zig-x86_64-linux-0.17.0.tar.xz -o "$RUNNER_TEMP/zig.tar.xz"
+          echo '1cbe9df9f27e6b78d14ccbca43b6703a404ef79ef1c463de901d7f088d4e2026  '"$RUNNER_TEMP/zig.tar.xz" | sha256sum --check
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/zig-x86_64-linux-0.17.0" >> "$GITHUB_PATH"
+      - name: Determine version
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            [[ "$RELEASE_REF" =~ ^ghosntty-v([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)$ ]]
+            echo "DEB_VERSION=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+            echo "BUILD_VERSION=${BASH_REMATCH[1]}-ghosntty.${BASH_REMATCH[2]}" >> "$GITHUB_ENV"
+          else
+            echo 'DEB_VERSION=1.4.0-1' >> "$GITHUB_ENV"
+            echo 'BUILD_VERSION=1.4.0-ghosntty.1' >> "$GITHUB_ENV"
+          fi
+      - name: Build and test on Ubuntu 26.04
+        run: |
+          zig build -Doptimize=fast -Dcpu=baseline -Dsimd=true \
+            -Dversion-string="$BUILD_VERSION" -Demit-docs=false -Demit-themes=true -Di18n=false \
+            -Dinstalled-exe-path=/usr/bin/ghosntty \
+            -fsys=freetype -fsys=harfbuzz -fsys=fontconfig -fsys=libpng \
+            -fsys=zlib -fsys=oniguruma -fsys=gtk4-layer-shell -p "$RUNNER_TEMP/ghosntty-prefix" -j2
+          zig test src/apprt/gtk/control_request.zig
+          zig test src/apprt/gtk/project_colors.zig
+          /usr/bin/python3 -m unittest discover -s contrib/ghosntty/tests -p 'test_*.py' -v
+          GHOSTTY_TEST_BACKEND=v2 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua
+          GHOSTTY_TEST_BACKEND=v3 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua
+          GHOSTTY_RESOURCES_DIR="$RUNNER_TEMP/ghosntty-prefix/share/ghostty" \
+            "$RUNNER_TEMP/ghosntty-prefix/bin/ghostty" +validate-config \
+            --config-file="$PWD/contrib/ghosntty/profile/config.ghostty"
+          desktop-file-validate contrib/ghosntty/com.ghosntty.GhosnTTy.desktop
+      - name: Package and verify install
+        run: |
+          bash contrib/ghosntty/package-deb.sh "$RUNNER_TEMP/ghosntty-prefix" dist "$DEB_VERSION"
+          sudo apt-get install -y ./dist/*.deb
+          ghosntty --version
+          if ldd /usr/lib/ghosntty/bin/ghostty | grep -q 'not found'; then exit 1; fi
+          xvfb-run -a dbus-run-session -- /usr/bin/python3 contrib/ghosntty/tests/smoke_desktop.py
+          cd dist
+          sha256sum *.deb > SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: GhosnTTy-Ubuntu-26.04-x86_64
+          path: dist/*
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/ghosntty-v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$RELEASE_TAG" dist/* --verify-tag \
+            --title "GhosnTTy $DEB_VERSION" --notes-file contrib/ghosntty/RELEASE.md

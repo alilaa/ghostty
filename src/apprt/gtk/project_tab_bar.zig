@@ -16,7 +16,7 @@ box: *gtk.Box,
 fingerprint: ?u64 = null,
 
 pub fn init(view: *adw.TabView) Self {
-    const box = gtk.Box.new(.horizontal, 3);
+    const box = gtk.Box.new(.horizontal, 0);
     const scroll = gtk.ScrolledWindow.new();
     _ = scroll.as(gobject.Object).refSink();
     scroll.setPolicy(.automatic, .never);
@@ -74,9 +74,9 @@ pub fn refresh(self: *Self) void {
         var css_buf: [1024]u8 = undefined;
         const style = std.mem.printSentinel(
             &css_buf,
-            "button.project-tab {{ background-image: none; background-color: #{x:0>6}; color: #{x:0>6}; border-radius: 0; padding: 4px 8px; font-weight: {s}; }} " ++
+            "{s}button.project-tab {{ background-color: #{x:0>6}; color: #{x:0>6}; font-weight: {s}; }} " ++
                 "button.project-tab:hover {{ background-color: #{x:0>6}; }}",
-            .{ bg, fg, if (active) @as([]const u8, "bold") else "normal", colors.hover(bg) },
+            .{ compact_css, bg, fg, if (active) @as([]const u8, "bold") else "normal", colors.hover(bg) },
             0,
         ) catch continue;
         css.loadFromString(style);
@@ -92,7 +92,7 @@ pub fn refresh(self: *Self) void {
         _ = gtk.Button.signals.clicked.connect(button, *adw.TabPage, selectPage, page, .{});
         const group = gtk.Box.new(.horizontal, 0);
         group.append(button.as(gtk.Widget));
-        const close = gtk.Button.newFromIconName("window-close-symbolic");
+        const close = gtk.Button.newWithLabel("×");
         close.as(gtk.Widget).addCssClass("project-tab");
         close.as(gtk.Widget).setFocusOnClick(0);
         close.as(gtk.Widget).setTooltipText("Close tab");
@@ -101,11 +101,14 @@ pub fn refresh(self: *Self) void {
         group.append(close.as(gtk.Widget));
         self.box.append(group.as(gtk.Widget));
     }
-    const add = gtk.Button.newFromIconName("tab-new-symbolic");
-    add.as(gtk.Actionable).setActionName("win.new-tab");
-    add.as(gtk.Widget).setFocusOnClick(0);
-    self.box.append(add.as(gtk.Widget));
 }
+
+// Both labels and close controls must override the theme's button minimums.
+const compact_css =
+    "button.project-tab { " ++
+    "background-image: none; min-height: 0; min-width: 0; " ++
+    "border: none; border-radius: 0; box-shadow: none; " ++
+    "margin: 0; padding: 1px 6px; } ";
 
 fn background(page: *adw.TabPage, tab: *Tab) u24 {
     const pane_title: []const u8 = if (tab.getActiveSurface()) |surface|

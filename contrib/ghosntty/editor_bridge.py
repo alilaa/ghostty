@@ -6,8 +6,8 @@ import sys
 
 from gi.repository import Gio, GLib
 
-PATH = "/com/anton/Ghostty/EditorControl"
-INTERFACE = "com.anton.Ghostty.EditorControl1"
+PATH = "/com/ghosntty/GhosnTTy/EditorControl"
+INTERFACE = "com.ghosntty.GhosnTTy.EditorControl1"
 
 
 class Client:

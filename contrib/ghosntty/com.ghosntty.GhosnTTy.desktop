@@ -1,0 +1,25 @@
+[Desktop Entry]
+Version=1.0
+Name=GhosnTTy
+Comment=Terminal with project-colored tabs and Neovim navigation
+Type=Application
+TryExec=ghosntty
+Exec=ghosntty --gtk-single-instance=true
+Icon=com.ghosntty.GhosnTTy
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=terminal;tty;pty;
+StartupNotify=true
+StartupWMClass=com.ghosntty.GhosnTTy
+DBusActivatable=true
+Actions=new-window;
+X-GNOME-UsesNotifications=true
+X-TerminalArgExec=-e
+X-TerminalArgTitle=--title=
+X-TerminalArgAppId=--class=
+X-TerminalArgDir=--working-directory=
+X-TerminalArgHold=--wait-after-command
+
+[Desktop Action new-window]
+Name=New Window
+Exec=ghosntty +new-window

@@ -1,0 +1,71 @@
+# GhosnTTy: a compact Linux profile based on WezTerm.
+class = com.ghosntty.GhosnTTy
+theme = Kanagawa-WezTerm
+
+font-family = JetBrainsMono Nerd Font Mono
+font-family = JetBrains Mono
+font-family = Noto Color Emoji
+font-family = monospace
+font-size = 11
+cursor-style = bar
+cursor-style-blink = false
+shell-integration-features = no-cursor
+
+# The current WezTerm config lets Sway size and decorate the window.
+window-decoration = none
+gtk-titlebar = false
+gtk-titlebar-style = native
+maximize = false
+confirm-close-surface = false
+auto-update = off
+window-padding-x = 3
+window-padding-y = 0
+window-padding-balance = false
+window-theme = ghostty
+scrollbar = never
+
+gtk-editor-control = true
+gtk-project-tabs = true
+gtk-tabs-location = bottom
+gtk-wide-tabs = false
+window-show-tab-bar = auto
+window-title-font-family = JetBrainsMono Nerd Font Mono
+gtk-custom-css = gtk.css
+
+# Match brightness=0.2 with a black dimming overlay; saturation is approximate.
+unfocused-split-opacity = 0.2
+unfocused-split-fill = #000000
+
+background-opacity = 1
+link-url = true
+
+# Same Linux tab and split shortcuts as the active WezTerm config.
+keybind = ctrl+shift+u=new_tab
+keybind = alt+shift+equal=new_split:right
+keybind = alt+shift+minus=new_split:down
+keybind = alt+shift+d=new_split:right
+
+keybind = ctrl+h=goto_split:left
+keybind = ctrl+j=goto_split:down
+keybind = ctrl+k=goto_split:up
+keybind = ctrl+l=goto_split:right
+
+# Native Ghostty actions use pixels; these approximate three cells at 11pt.
+# The Neovim adapter converts its resize amounts using the actual cell size.
+keybind = ctrl+left=resize_split:left,30
+keybind = ctrl+right=resize_split:right,30
+keybind = ctrl+up=resize_split:up,60
+keybind = ctrl+down=resize_split:down,60
+
+keybind = smart-splits/
+keybind = smart-splits/ctrl+h=text:\x08
+keybind = smart-splits/ctrl+j=text:\x0a
+keybind = smart-splits/ctrl+k=text:\x0b
+keybind = smart-splits/ctrl+l=text:\x0c
+keybind = smart-splits/ctrl+left=csi:1;5D
+keybind = smart-splits/ctrl+right=csi:1;5C
+keybind = smart-splits/ctrl+up=csi:1;5A
+keybind = smart-splits/ctrl+down=csi:1;5B
+
+keybind = ctrl+shift+f12=deactivate_all_key_tables
+keybind = smart-splits/ctrl+shift+f12=deactivate_all_key_tables

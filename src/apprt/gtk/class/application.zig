@@ -357,6 +357,8 @@ pub const Application = extern struct {
             break :app_id build_info.application_id;
         };
 
+        glib.setApplicationName(build_info.display_name);
+
         const display: *gdk.Display = gdk.Display.getDefault() orelse {
             // I'm unsure of any scenario where this happens. Because we don't
             // want to litter null checks everywhere, we just exit here.
@@ -2269,7 +2271,7 @@ const Action = struct {
 
         // Set a default title if we don't already have one
         const t = switch (n.title.len) {
-            0 => "Ghostty",
+            0 => build_info.display_name,
             else => n.title,
         };
 
@@ -2277,7 +2279,7 @@ const Action = struct {
         defer notification.unref();
         notification.setBody(n.body);
 
-        const icon = gio.ThemedIcon.new("com.mitchellh.ghostty");
+        const icon = gio.ThemedIcon.new(build_info.base_application_id);
         defer icon.unref();
         notification.setIcon(icon.as(gio.Icon));
         notification.setDefaultActionAndTargetValue(

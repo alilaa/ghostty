@@ -362,7 +362,7 @@ pub const Window = extern struct {
 
         // Set our window icon. We can't set this in the blueprint file
         // because its dependent on the build config.
-        self.as(gtk.Window).setIconName(build_config.bundle_id);
+        self.as(gtk.Window).setIconName("com.ghosntty.GhosnTTy");
 
         // Initialize our actions
         self.initActionMap();
@@ -1445,7 +1445,7 @@ pub const Window = extern struct {
     ) callconv(.c) ?[*:0]const u8 {
         if (title_override_) |v| return glib.ext.dupeZ(u8, std.mem.span(v));
         if (title_) |v| return glib.ext.dupeZ(u8, std.mem.span(v));
-        return glib.ext.dupeZ(u8, "Ghostty");
+        return glib.ext.dupeZ(u8, "GhosnTTy");
     }
 
     fn closureSubtitle(
@@ -2070,22 +2070,22 @@ pub const Window = extern struct {
         _: ?*glib.Variant,
         self: *Self,
     ) callconv(.c) void {
-        const name = "Ghostty";
-        const icon = "com.mitchellh.ghostty";
-        const website = "https://ghostty.org";
+        const name = "GhosnTTy";
+        const icon = "com.ghosntty.GhosnTTy";
+        const website = "https://github.com/alilaa/ghostty";
 
         adw.showAboutDialog(
             self.as(gtk.Widget),
             "application-name",
             name,
             "developer-name",
-            i18n._("Ghostty Developers"),
+            i18n._("GhosnTTy contributors and Ghostty Developers"),
             "application-icon",
             icon,
             "version",
             build_config.version_string.ptr,
             "issue-url",
-            "https://github.com/ghostty-org/ghostty/issues",
+            "https://github.com/alilaa/ghostty/issues",
             "website",
             website,
             @as(?*anyopaque, null),

@@ -1,7 +1,9 @@
 const builtin = @import("builtin");
 
-/// Base application ID
-pub const base_application_id = "com.mitchellh.ghostty";
+/// Linux fork identity. The embedded resource prefix remains upstream so
+/// existing templates and stylesheets keep their resource references.
+pub const display_name = "GhosnTTy";
+pub const base_application_id = "com.ghosntty.GhosnTTy";
 
 /// GTK application ID
 pub const application_id = switch (builtin.mode) {
@@ -13,6 +15,6 @@ pub const resource_path = "/com/mitchellh/ghostty";
 
 /// GTK object path
 pub const object_path = switch (builtin.mode) {
-    .debug, .safe => resource_path ++ "_debug",
-    .fast, .small => resource_path,
+    .debug, .safe => "/com/ghosntty/GhosnTTy_debug",
+    .fast, .small => "/com/ghosntty/GhosnTTy",
 };

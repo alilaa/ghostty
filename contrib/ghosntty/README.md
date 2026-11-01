@@ -1,9 +1,29 @@
-# Anton's Linux integration
+# GhosnTTy
 
 This branch starts from Ghostty v1.4.0. It adds opt-in project-colored tabs
 and editor navigation for the GTK application. Both options default to false.
 The implementation was written with OpenAI Codex; desktop validation is still
 required before using it as the daily terminal.
+
+## Ubuntu 26.04 release
+
+The `GhosnTTy Ubuntu release` workflow builds and tests on native Ubuntu 26.04
+x86-64, packages a `.deb`, checks its installation and desktop D-Bus integration,
+and publishes it with SHA256 checksums after a `ghosntty-v*` release tag is pushed.
+It uses GitHub-hosted runners and the repository token; no upstream release
+secrets are needed. See [installation and Neovim setup](RELEASE.md).
+
+From a clean, committed checkout with GitHub SSH authentication:
+
+```sh
+bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-1
+```
+
+This pushes the current branch and release tag. The package's command is
+`ghosntty` and its application ID is `com.ghosntty.GhosnTTy`. Configuration
+remains in `~/.config/ghostty` and `TERM_PROGRAM` remains `ghostty` for upstream
+shell/editor compatibility. Existing configuration is preserved; a fresh
+installation uses the bundled Kanagawa/WezTerm-style profile.
 
 ## Build and launch separately
 
@@ -13,14 +33,16 @@ Nothing in this directory automatically installs or replaces your terminal.
 
 ```sh
 zig build -Demit-docs=false
-./zig-out/bin/ghostty --class=com.anton.Ghostty \
+./zig-out/bin/ghostty --class=com.ghosntty.GhosnTTy \
   --config-default-files=false \
-  --config-file="$PWD/contrib/anton/config.ghostty"
+  --config-file="$PWD/contrib/ghosntty/config.ghostty"
 ```
 
 The sample config enables `gtk-project-tabs` and `gtk-editor-control`, places
 tabs at the bottom, and preserves Ctrl+H/J/K/L and Ctrl+Arrow. It also provides
 Ctrl+Shift+F12 to reset key tables. Editor control requires restarting Ghostty.
+The complete release profile is in `profile/config.ghostty`, including
+Ctrl+Shift+U for opening tabs without a new-tab button.
 
 ## Neovim
 
@@ -28,7 +50,7 @@ After the existing smart-splits setup, add this to your Neovim configuration
 (adjust the checkout path if needed):
 
 ```lua
-vim.opt.runtimepath:append(vim.fn.expand("~/src/ghostty/contrib/anton/nvim"))
+vim.opt.runtimepath:append(vim.fn.expand("~/src/ghostty/contrib/ghosntty/nvim"))
 require("ghostty_control").setup()
 ```
 
@@ -46,14 +68,14 @@ override the changing pane title, so a Codex spinner does not change identity.
 
 `gtk-project-tabs` uses a separate GTK strip backed by the existing AdwTabView.
 It preserves the sixteen-color djb2 palette, contrasting text, hover tint,
-active marker, and Codex title-based green/red states. New-tab and close buttons
-use the existing tab lifecycle. Keyboard tab switching and reordering continue
+active marker, and Codex title-based green/red states. The compact strip keeps close buttons and omits the new-tab button; use
+Ctrl+Shift+U to open tabs. Closing uses the existing tab lifecycle. Keyboard tab switching and reordering continue
 to use Ghostty actions. The custom strip does not yet implement drag-to-reorder,
 drag-to-detach, or the native tab context menu. Codex detection currently uses
 the pane title; foreground-process fallback is not yet implemented.
 
 `gtk-editor-control` exports the versioned D-Bus interface
-`com.anton.Ghostty.EditorControl1` at `/com/anton/Ghostty/EditorControl`.
+`com.ghosntty.GhosnTTy.EditorControl1` at `/com/ghosntty/GhosnTTy/EditorControl`.
 It accepts `Execute(surface: uint64, operation: string, value: string,
 amount: uint32) -> performed: bool`. Operations are:
 
@@ -84,9 +106,9 @@ SSH and nested terminal multiplexers need separate integration.
 ```sh
 zig test src/apprt/gtk/control_request.zig
 zig test src/apprt/gtk/project_colors.zig
-python -m unittest discover -s contrib/anton/tests -p 'test_*.py' -v
-GHOSTTY_TEST_BACKEND=v2 nvim --headless -u NONE -l contrib/anton/tests/test_adapter.lua
-GHOSTTY_TEST_BACKEND=v3 nvim --headless -u NONE -l contrib/anton/tests/test_adapter.lua
+python -m unittest discover -s contrib/ghosntty/tests -p 'test_*.py' -v
+GHOSTTY_TEST_BACKEND=v2 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua
+GHOSTTY_TEST_BACKEND=v3 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua
 ```
 
 For an additional geometry test using the exact smart-splits version in the
@@ -95,7 +117,7 @@ dotfiles, point `GHOSTTY_SMART_SPLITS_PATH` at a checkout of commit
 
 ```sh
 GHOSTTY_SMART_SPLITS_PATH=/path/to/smart-splits.nvim \
-  nvim --headless -u NONE -l contrib/anton/tests/test_real_splits.lua
+  nvim --headless -u NONE -l contrib/ghosntty/tests/test_real_splits.lua
 ```
 
 Desktop checks still required: movement through a nested Neovim/Ghostty layout;

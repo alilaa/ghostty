@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=com.ghosntty.GhosnTTy
+Exec=/usr/bin/ghosntty --gtk-single-instance=true
