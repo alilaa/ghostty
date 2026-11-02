@@ -88,6 +88,21 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Current OSC 9;4 progress report, or null when none is active.
+        /// Notified on every report so tab indicators stay in sync.
+        pub const @"progress-state" = struct {
+            pub const name = "progress-state";
+            const impl = gobject.ext.defineProperty(
+                name,
+                Self,
+                bool,
+                .{
+                    .default = false,
+                    .accessor = C.privateShallowFieldAccessor("progress_active"),
+                },
+            );
+        };
+
         pub const config = struct {
             pub const name = "config";
             const impl = gobject.ext.defineProperty(
@@ -685,6 +700,8 @@ pub const Surface = extern struct {
 
         // Progress bar
         progress_bar_timer: ?c_uint = null,
+        progress_active: bool = false,
+        progress_report: ?terminal.osc.Command.ProgressReport = null,
 
         // Desktop notifications and timers owned by this surface.
         desktop_notifications: DesktopNotifications,
@@ -1068,6 +1085,9 @@ pub const Surface = extern struct {
         value: terminal.osc.Command.ProgressReport,
     ) void {
         const priv = self.private();
+        priv.progress_report = if (value.state == .remove) null else value;
+        priv.progress_active = value.state != .remove;
+        self.as(gobject.Object).notifyByPspec(properties.@"progress-state".impl.param_spec);
 
         // No matter what, we stop the timer because if we're removing
         // then we're done and otherwise we restart it.
@@ -1148,6 +1168,10 @@ pub const Surface = extern struct {
             progressBarTimer,
             self,
         );
+    }
+
+    pub fn getProgressReport(self: *Self) ?terminal.osc.Command.ProgressReport {
+        return self.private().progress_report;
     }
 
     /// The progress bar hasn't been updated by the TUI recently, remove it.
@@ -4036,6 +4060,7 @@ pub const Surface = extern struct {
             // Properties
             gobject.ext.registerProperties(class, &.{
                 properties.@"bell-ringing".impl,
+                properties.@"progress-state".impl,
                 properties.config.impl,
                 properties.@"child-exited".impl,
                 properties.@"default-size".impl,

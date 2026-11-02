@@ -5,6 +5,7 @@ const std = @import("std");
 const adw = @import("adw");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
+const terminal = @import("../../terminal/main.zig");
 const colors = @import("project_colors.zig");
 const ext = @import("ext.zig");
 const Window = @import("class/window.zig").Window;
@@ -120,8 +121,14 @@ const compact_css =
 fn updateTitle(button: *gtk.Button, page: *adw.TabPage, active: bool) void {
     const label = gobject.ext.cast(gtk.Label, button.getChild() orelse return) orelse return;
     var label_buf: [4096]u8 = undefined;
-    const text = std.mem.printSentinel(&label_buf, "{s}{s}", .{
+    var progress_buf: [16]u8 = undefined;
+    const progress: []const u8 = if (gobject.ext.cast(Tab, page.getChild())) |tab|
+        progressText(&progress_buf, progressReport(tab))
+    else
+        "";
+    const text = std.mem.printSentinel(&label_buf, "{s}{s}{s}", .{
         if (active) @as([]const u8, "● ") else "  ",
+        progress,
         std.mem.span(page.getTitle()),
     }, 0) catch "";
     if (std.mem.eql(u8, std.mem.span(label.getText()), text)) return;
@@ -129,7 +136,30 @@ fn updateTitle(button: *gtk.Button, page: *adw.TabPage, active: bool) void {
     button.as(gtk.Widget).setTooltipText(page.getTitle());
 }
 
+fn progressText(buf: []u8, report: ?terminal.osc.Command.ProgressReport) []const u8 {
+    const r = report orelse return "";
+    return switch (r.state) {
+        .remove => "",
+        .indeterminate => "⟳ ",
+        .@"error" => if (r.progress) |p| std.fmt.bufPrint(buf, "✖ {d}% ", .{p}) catch "✖ " else "✖ ",
+        .pause => if (r.progress) |p| std.fmt.bufPrint(buf, "⏸ {d}% ", .{p}) catch "⏸ " else "⏸ ",
+        .set => if (r.progress) |p| std.fmt.bufPrint(buf, "◔ {d}% ", .{p}) catch "◔ " else "⟳ ",
+    };
+}
+
+fn progressReport(tab: *Tab) ?terminal.osc.Command.ProgressReport {
+    const surface = tab.getActiveSurface() orelse return null;
+    return surface.getProgressReport();
+}
+
+/// Error and pause both mean the agent is blocked on the user.
+fn needsAttention(tab: *Tab) bool {
+    const report = progressReport(tab) orelse return false;
+    return report.state == .@"error" or report.state == .pause;
+}
+
 fn background(page: *adw.TabPage, tab: *Tab) u24 {
+    if (needsAttention(tab)) return 0xff3b30;
     const surface = tab.getActiveSurface();
     const pane_title: []const u8 = if (surface) |s| s.getTitle() orelse "" else "";
     const codex_process = if (surface) |s| s.isForegroundCodex() else false;

@@ -848,6 +848,7 @@ pub const Window = extern struct {
             );
 
             _ = gobject.Object.signals.notify.connect(surface, *Self, projectSurfaceNotify, self, .{ .detail = "title" });
+            _ = gobject.Object.signals.notify.connect(surface, *Self, projectSurfaceNotify, self, .{ .detail = "progress-state" });
 
             _ = Surface.signals.@"present-request".connect(
                 surface,
