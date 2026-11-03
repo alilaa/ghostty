@@ -21,11 +21,15 @@ with tempfile.TemporaryDirectory(prefix="ghosntty-smoke-") as temporary:
         "open(sys.argv[1],'w')); time.sleep(90)"
     )
     log = (root / "desktop.log").open("w+")
+    # `-e` forces gtk-single-instance=false, which would leave +new-tab with no
+    # primary instance to talk to, so the first child is run via `command`.
+    script = root / "child.py"
+    script.write_text(child)
     process = subprocess.Popen(
         ["ghosntty", "--config-default-files=false",
          "--config-file=/usr/share/ghosntty/profile/config.ghostty",
          "--gtk-single-instance=true", "--window-show-tab-bar=always",
-         "-e", "/usr/bin/python3", "-c", child, str(ready)],
+         f"--command=/usr/bin/python3 {script} {ready}"],
         env={**os.environ, "GDK_BACKEND": "x11", "LIBGL_ALWAYS_SOFTWARE": "1"},
         stdout=log, stderr=log,
     )

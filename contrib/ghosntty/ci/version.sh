@@ -5,7 +5,7 @@ if [[ ${REF_TYPE:?} == tag ]]; then
     package_version=${BASH_REMATCH[1]}-${BASH_REMATCH[2]}
     build_version=${BASH_REMATCH[1]}-ghosntty.${BASH_REMATCH[2]}
 else
-    package_version=1.4.0-4
-    build_version=1.4.0-ghosntty.4
+    package_version=1.4.0-5
+    build_version=1.4.0-ghosntty.5
 fi
 printf 'PACKAGE_VERSION=%s\nBUILD_VERSION=%s\n' "$package_version" "$build_version" >> "${GITHUB_ENV:?}"

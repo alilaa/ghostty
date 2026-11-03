@@ -32,7 +32,7 @@ also works with an empty user configuration directory.
 From a clean, committed checkout with GitHub SSH authentication:
 
 ```sh
-bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-4
+bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-5
 ```
 
 This pushes the current branch and release tag. The package's command is
