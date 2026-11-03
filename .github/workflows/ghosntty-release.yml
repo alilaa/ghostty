@@ -56,7 +56,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: GhosnTTy-Ubuntu-26.04-x86_64
-          path: dist/*
+          path: |
+            dist/*.deb
+            dist/*-build-info.txt
           if-no-files-found: error
 
   arch:
@@ -109,7 +111,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: GhosnTTy-Arch-x86_64
-          path: dist/*
+          path: |
+            dist/*.pkg.tar.zst
+            dist/*-build-info.txt
           if-no-files-found: error
 
   publish:
@@ -124,19 +128,20 @@ jobs:
         with:
           pattern: GhosnTTy-*
           merge-multiple: true
-          path: dist
+          # Not dist/: the checkout has upstream's dist/ directories, which the upload would include.
+          path: release
       - name: Determine version
         run: bash contrib/ghosntty/ci/version.sh
       - name: Generate checksums
-        working-directory: dist
+        working-directory: release
         run: sha256sum *.deb *.pkg.tar.zst *-build-info.txt > SHA256SUMS
       - name: Publish both platforms together
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "$RELEASE_REF" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_REF" dist/* --clobber
+            gh release upload "$RELEASE_REF" release/* --clobber
           else
-            gh release create "$RELEASE_REF" dist/* --verify-tag \
+            gh release create "$RELEASE_REF" release/* --verify-tag \
               --title "GhosnTTy $PACKAGE_VERSION" --notes-file contrib/ghosntty/RELEASE.md
           fi
