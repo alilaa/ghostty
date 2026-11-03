@@ -21,6 +21,7 @@ const terminal = @import("../../../terminal/main.zig");
 const CoreSurface = @import("../../../Surface.zig");
 const gresource = @import("../build/gresource.zig");
 const ext = @import("../ext.zig");
+const editor_control = @import("../editor_control.zig");
 const gsettings = @import("../gsettings.zig");
 const gtk_key = @import("../key.zig");
 const ApprtSurface = @import("../Surface.zig");
@@ -2299,7 +2300,16 @@ pub const Surface = extern struct {
     fn getKeyTable(self: *Self) ?*ext.StringList {
         const priv = self.private();
         const alloc = Application.default().allocator();
-        return ext.StringList.create(alloc, priv.key_tables.items) catch null;
+
+        // The editor-integration "smart-splits" table is always active while
+        // in neovim; don't show it in the key state overlay.
+        var visible: std.ArrayListUnmanaged([:0]const u8) = .empty;
+        defer visible.deinit(alloc);
+        for (priv.key_tables.items) |s| {
+            if (std.mem.eql(u8, s, editor_control.key_table)) continue;
+            visible.append(alloc, s) catch return null;
+        }
+        return ext.StringList.create(alloc, visible.items) catch null;
     }
 
     /// Return the smallest size, in logical pixels, that this surface can
