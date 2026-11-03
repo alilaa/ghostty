@@ -142,8 +142,8 @@ fn progressText(buf: []u8, report: ?terminal.osc.Command.ProgressReport) []const
         .remove => "",
         .indeterminate => "🤖 ",
         .@"error" => if (r.progress) |p| std.fmt.bufPrint(buf, "✖ {d}% ", .{p}) catch "✖ " else "✖ ",
-        .pause => if (r.progress) |p| std.fmt.bufPrint(buf, "⏸ {d}% ", .{p}) catch "⏸ " else "⏸ ",
-        .set => if (r.progress) |p| std.fmt.bufPrint(buf, "◔ {d}% ", .{p}) catch "◔ " else "⟳ ",
+        .pause => "❓ ",
+        .set => if (r.progress == 100) "✅ " else if (r.progress) |p| std.fmt.bufPrint(buf, "◔ {d}% ", .{p}) catch "◔ " else "⟳ ",
     };
 }
 

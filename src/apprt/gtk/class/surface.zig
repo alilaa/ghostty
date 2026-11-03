@@ -1087,15 +1087,6 @@ pub const Surface = extern struct {
     ) void {
         const priv = self.private();
 
-        // A paused report means the agent is waiting on the user. Agents keep
-        // sending periodic indeterminate heartbeats while waiting, so ignore
-        // those until something else (remove, set, error) replaces the pause.
-        if (value.state == .indeterminate) {
-            if (priv.progress_report) |current| {
-                if (current.state == .pause) return;
-            }
-        }
-
         priv.progress_report = if (value.state == .remove) null else value;
         priv.progress_active = value.state != .remove;
         self.as(gobject.Object).notifyByPspec(properties.@"progress-state".impl.param_spec);
@@ -1170,10 +1161,10 @@ pub const Surface = extern struct {
         assert(value.state != .remove);
         progress_bar.as(gtk.Widget).setVisible(@intFromBool(true));
 
-        // Start our timer to remove bad actor programs that stall
-        // the progress bar.
-        // A pause is a deliberate wait for the user, so it lives longer.
-        const progress_bar_timeout_seconds: u32 = if (value.state == .pause) 600 else 15;
+        // Start our timer to hide the in-pane bar of bad actor programs that
+        // stall it. The report itself stays: tabs show the latest reported
+        // state until the next report arrives.
+        const progress_bar_timeout_seconds = 15;
         assert(priv.progress_bar_timer == null);
         priv.progress_bar_timer = glib.timeoutAdd(
             progress_bar_timeout_seconds * std.time.ms_per_s,
@@ -1186,12 +1177,13 @@ pub const Surface = extern struct {
         return self.private().progress_report;
     }
 
-    /// The progress bar hasn't been updated by the TUI recently, remove it.
+    /// The progress bar hasn't been updated by the TUI recently, hide it.
     fn progressBarTimer(ud: ?*anyopaque) callconv(.c) c_int {
         const self: *Self = @ptrCast(@alignCast(ud.?));
         const priv = self.private();
         priv.progress_bar_timer = null;
-        self.setProgressReport(.{ .state = .remove });
+        priv.progress_bar_overlay.setFraction(0);
+        priv.progress_bar_overlay.as(gtk.Widget).setVisible(@intFromBool(false));
         return @intFromBool(glib.SOURCE_REMOVE);
     }
 
