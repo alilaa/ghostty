@@ -1086,6 +1086,16 @@ pub const Surface = extern struct {
         value: terminal.osc.Command.ProgressReport,
     ) void {
         const priv = self.private();
+
+        // A paused report means the agent is waiting on the user. Agents keep
+        // sending periodic indeterminate heartbeats while waiting, so ignore
+        // those until something else (remove, set, error) replaces the pause.
+        if (value.state == .indeterminate) {
+            if (priv.progress_report) |current| {
+                if (current.state == .pause) return;
+            }
+        }
+
         priv.progress_report = if (value.state == .remove) null else value;
         priv.progress_active = value.state != .remove;
         self.as(gobject.Object).notifyByPspec(properties.@"progress-state".impl.param_spec);
@@ -1162,7 +1172,8 @@ pub const Surface = extern struct {
 
         // Start our timer to remove bad actor programs that stall
         // the progress bar.
-        const progress_bar_timeout_seconds = 15;
+        // A pause is a deliberate wait for the user, so it lives longer.
+        const progress_bar_timeout_seconds: u32 = if (value.state == .pause) 600 else 15;
         assert(priv.progress_bar_timer == null);
         priv.progress_bar_timer = glib.timeoutAdd(
             progress_bar_timeout_seconds * std.time.ms_per_s,
