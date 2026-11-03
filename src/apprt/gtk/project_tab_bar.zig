@@ -140,7 +140,7 @@ fn progressText(buf: []u8, report: ?terminal.osc.Command.ProgressReport) []const
     const r = report orelse return "";
     return switch (r.state) {
         .remove => "",
-        .indeterminate => "⟳ ",
+        .indeterminate => "🤖 ",
         .@"error" => if (r.progress) |p| std.fmt.bufPrint(buf, "✖ {d}% ", .{p}) catch "✖ " else "✖ ",
         .pause => if (r.progress) |p| std.fmt.bufPrint(buf, "⏸ {d}% ", .{p}) catch "⏸ " else "⏸ ",
         .set => if (r.progress) |p| std.fmt.bufPrint(buf, "◔ {d}% ", .{p}) catch "◔ " else "⟳ ",
