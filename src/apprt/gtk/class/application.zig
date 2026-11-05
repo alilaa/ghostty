@@ -1547,6 +1547,7 @@ pub const Application = extern struct {
                 _ = connection.unregisterObject(priv.editor_control_id);
             }
             priv.editor_control_id = 0;
+            editor_control.shutdown();
         }
         if (priv.config_errors_dialog.get()) |diag| {
             diag.close();

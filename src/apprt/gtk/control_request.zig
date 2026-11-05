@@ -13,6 +13,21 @@ pub fn validProject(value: []const u8) bool {
     return true;
 }
 
+pub const max_argv = 256;
+
+/// Empty means "inherit"; otherwise the path must be absolute, since a
+/// relative one would resolve against Ghostty's own working directory.
+pub fn validPath(value: []const u8) bool {
+    if (value.len == 0) return true;
+    if (value.len > std.fs.max_path_bytes or value[0] != '/') return false;
+    return std.mem.indexOfScalar(u8, value, 0) == null;
+}
+
+/// Arguments reach exec as C strings, so embedded NULs would truncate them.
+pub fn validArg(value: []const u8) bool {
+    return value.len <= 65536 and std.mem.indexOfScalar(u8, value, 0) == null;
+}
+
 /// Ghostty's GTK split tree uses logical pixels; smart-splits uses cells.
 pub fn resizePixels(cells: u32, cell_pixels: u32, scale: f32) ?u16 {
     if (cells == 0 or cells > 1000 or cell_pixels == 0 or
@@ -42,4 +57,15 @@ test "editor control resize converts cells at fractional DPI and clamps" {
     try t.expectEqual(null, resizePixels(0, 12, 1));
     try t.expectEqual(null, resizePixels(1001, 12, 1));
     try t.expectEqual(null, resizePixels(3, 12, 0));
+}
+
+test "editor control validates spawn paths and arguments" {
+    const t = std.testing;
+    try t.expect(validPath(""));
+    try t.expect(validPath("/home/a b/ö"));
+    try t.expect(!validPath("/a\x00b"));
+    try t.expect(!validPath("relative/dir"));
+    try t.expect(!validPath("~/src"));
+    try t.expect(validArg("--flag=$(not-a-shell)"));
+    try t.expect(!validArg("a\x00b"));
 }

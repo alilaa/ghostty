@@ -107,8 +107,32 @@ amount: uint32) -> performed: bool`. Operations are:
 | `resize` | direction | cells, 1–1000 |
 | `project` | project title, empty clears override | ignored |
 
+The same interface also provides pane control for terminal bridges:
+
+| Method | Signature | Result |
+| --- | --- | --- |
+| `ListSurfaces` | `() -> a(tsssb)` | id, title, cwd, `window:tab` id, is-active-in-tab |
+| `FocusedSurface` | `() -> t` | focused pane, or 0 if no window is active |
+| `Split` | `(t, s, s, as) -> t` | split `surface` toward `left`/`right`/`up`/`down`, in `cwd` (absolute, or empty to inherit), running `argv` directly (no shell; empty argv starts the default shell) and returning the new surface ID once it is realized |
+| `Focus` | `(t) -> b` | select the tab, focus the pane, and raise the window |
+
+The `window:tab` id is made of decimal counters that are never reused while
+GhosnTTy runs. `FocusChanged(t)` is emitted whenever the focused pane changes,
+with 0 when focus leaves all GhosnTTy windows; it carries the same value as
+`FocusedSurface`.
+
+All of this is only exported when `gtk-editor-control` is enabled, on the
+current user's session bus, so other users cannot reach it. `Split` launches
+programs, so it is additionally refused with `AccessDenied` unless
+`gtk-editor-control-spawn = true`. Any process on your session bus can use it
+once enabled, including Flatpak or other sandboxed apps granted session-bus
+access, which could then run commands outside their sandbox. Enable it only if
+you trust everything with access to that bus.
+
 `GHOSTTY_CONTROL_BUS` holds this process's unique D-Bus name, and
-`GHOSTTY_SURFACE_ID` identifies the calling pane. Moves and resizes are rejected
+`GHOSTTY_SURFACE_ID` identifies the calling pane. It is a `0x`-prefixed
+hexadecimal string, so parse it (for example `int(value, 16)`) before passing
+it as the `uint64` surface argument. Moves and resizes are rejected
 if that pane is no longer focused. Resizing converts cells into logical pixels
 using the current font and content scale. A failed move returns false to
 smart-splits rather than pretending to have moved.

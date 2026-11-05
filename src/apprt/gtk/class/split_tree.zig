@@ -256,7 +256,8 @@ pub const SplitTree = extern struct {
 
         // The handle we create the split relative to. Today this is the active
         // surface but this might be the handle of the given parent if we want.
-        const handle = self.getActiveSurfaceHandle() orelse .root;
+        const handle = self.getSurfaceHandle(parent_) orelse
+            self.getActiveSurfaceHandle() orelse .root;
 
         // Create our split!
         var new_tree = try old_tree.split(
@@ -548,6 +549,17 @@ pub const SplitTree = extern struct {
         const tree = self.getTree() orelse return null;
         const handle = self.getActiveSurfaceHandle() orelse return null;
         return tree.nodes[handle.idx()].leaf;
+    }
+
+    /// The handle of a surface in this tree, or null if it is not a member.
+    fn getSurfaceHandle(self: *Self, surface: ?*Surface) ?Surface.Tree.Node.Handle {
+        const target = surface orelse return null;
+        const tree = self.getTree() orelse return null;
+        var it = tree.iterator();
+        while (it.next()) |entry| {
+            if (entry.view == target) return entry.handle;
+        }
+        return null;
     }
 
     fn getActiveSurfaceHandle(self: *Self) ?Surface.Tree.Node.Handle {

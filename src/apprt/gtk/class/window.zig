@@ -31,6 +31,7 @@ const WeakRef = @import("../weak_ref.zig").WeakRef;
 const TitleDialog = @import("title_dialog.zig").TitleDialog;
 const Overrides = @import("Overrides.zig");
 const ProjectTabBar = @import("../project_tab_bar.zig");
+const editor_control = @import("../editor_control.zig");
 
 const log = std.log.scoped(.gtk_ghostty_window);
 
@@ -251,6 +252,9 @@ pub const Window = extern struct {
 
         /// Timeout source to react to this window becoming (in)active.
         handle_active_state_source: ?c_uint = null,
+
+        /// Lazily assigned, never-reused ID exposed to editor control.
+        control_id: u64 = 0,
 
         /// The window decoration override. If this is not set then we'll
         /// inherit whatever the config has. This allows overriding the
@@ -932,6 +936,9 @@ pub const Window = extern struct {
         const priv = self.private();
         priv.handle_active_state_source = null;
 
+        // Clients track focus leaving Ghostty, not only moving inside it.
+        editor_control.scheduleFocusCheck(Application.default());
+
         // Hide quick-terminal if set to autohide
         if (self.isQuickTerminal()) {
             if (self.getConfig()) |cfg| {
@@ -976,6 +983,19 @@ pub const Window = extern struct {
     pub fn getConfig(self: *Self) ?*Config {
         return self.private().config;
     }
+
+    /// A process-unique window ID. Unlike the window's address it is never
+    /// reused.
+    pub fn getControlId(self: *Self) u64 {
+        const priv = self.private();
+        if (priv.control_id == 0) {
+            next_control_id += 1;
+            priv.control_id = next_control_id;
+        }
+        return priv.control_id;
+    }
+
+    var next_control_id: u64 = 0;
 
     /// Get the tab view for this window.
     pub fn getTabView(self: *Self) *adw.TabView {

@@ -2965,6 +2965,8 @@ pub const Surface = extern struct {
         _ = glib.idleAddOnce(idleFocus, self.ref());
         self.as(gobject.Object).notifyByPspec(properties.focused.impl.param_spec);
 
+        editor_control.scheduleFocusCheck(Application.default());
+
         // Bell state and desktop notifications clear when we gain focus.
         if (focused) {
             self.setBellRinging(false);

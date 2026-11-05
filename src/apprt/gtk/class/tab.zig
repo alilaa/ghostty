@@ -161,6 +161,9 @@ pub const Tab = extern struct {
         /// The configuration that this surface is using.
         config: ?*Config = null,
 
+        /// Lazily assigned, never-reused ID exposed to editor control.
+        control_id: u64 = 0,
+
         /// The title of this tab. This is usually bound to the active surface.
         title: ?[:0]const u8 = null,
 
@@ -295,6 +298,18 @@ pub const Tab = extern struct {
 
         dialog.present(self.as(gtk.Widget));
     }
+
+    /// A process-unique tab ID. Unlike the tab's address it is never reused.
+    pub fn getControlId(self: *Self) u64 {
+        const priv = self.private();
+        if (priv.control_id == 0) {
+            next_control_id += 1;
+            priv.control_id = next_control_id;
+        }
+        return priv.control_id;
+    }
+
+    var next_control_id: u64 = 0;
 
     /// Get the currently active surface. See the "active-surface" property.
     /// This does not ref the value.

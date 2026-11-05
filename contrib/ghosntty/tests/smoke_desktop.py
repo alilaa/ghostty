@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix="ghosntty-smoke-") as temporary:
     process = subprocess.Popen(
         ["ghosntty", "--config-default-files=false",
          "--config-file=/usr/share/ghosntty/profile/config.ghostty",
-         "--gtk-single-instance=true", "--window-show-tab-bar=always",
+         "--gtk-single-instance=true", "--gtk-editor-control-spawn=true", "--window-show-tab-bar=always",
          f"--command=/usr/bin/python3 {script} {ready}"],
         env={**os.environ, "GDK_BACKEND": "x11", "LIBGL_ALWAYS_SOFTWARE": "1"},
         stdout=log, stderr=log,
@@ -74,6 +74,32 @@ with tempfile.TemporaryDirectory(prefix="ghosntty-smoke-") as temporary:
         assert other["GHOSTTY_SURFACE_ID"] != environment["GHOSTTY_SURFACE_ID"]
         assert other["GHOSTTY_CONTROL_BUS"] == environment["GHOSTTY_CONTROL_BUS"]
         assert execute(surface, "project", "Background tab")
+
+        def control(method, args, reply):
+            return connection.call_sync(
+                environment["GHOSTTY_CONTROL_BUS"],
+                "/com/ghosntty/GhosnTTy/EditorControl",
+                "com.ghosntty.GhosnTTy.EditorControl1", method, args,
+                GLib.VariantType.new(reply), Gio.DBusCallFlags.NO_AUTO_START,
+                5000, None,
+            ).unpack()[0]
+
+        third = root / "third.json"
+        split = control("Split", GLib.Variant(
+            "(tssas)", (surface, "left", temporary,
+                        ["/usr/bin/python3", str(script), str(third)])), "(t)")
+        assert int(wait_child(third)["GHOSTTY_SURFACE_ID"], 16) == split
+        panes = {pane[0]: pane for pane in control("ListSurfaces", None, "(a(tsssb))")}
+        assert {surface, split} <= panes.keys()
+        assert panes[surface][3] == panes[split][3] and panes[split][4]
+        for bad in [(surface, "diagonal", "", []), (surface, "left", "rel", [])]:
+            try:
+                control("Split", GLib.Variant("(tssas)", bad), "(t)")
+                raise AssertionError(f"Split accepted {bad}")
+            except GLib.Error:
+                pass
+        assert control("Focus", GLib.Variant("(t)", (surface,)), "(b)")
+        assert not control("Focus", GLib.Variant("(t)", (1,)), "(b)")
         print("Installed GTK package, new-tab IPC, and editor-control D-Bus: passed")
     except BaseException:
         log.flush()

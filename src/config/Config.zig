@@ -3861,9 +3861,16 @@ else
 @"gtk-wide-tabs": bool = true,
 
 /// Enable the experimental Linux editor-control D-Bus interface. Editors can
-/// request pane navigation/resizing and assign a stable project tab title.
-/// Requires restarting Ghostty. Disabled by default in this fork.
+/// request pane navigation/resizing, list and focus panes, and assign a stable
+/// project tab title. Requires restarting Ghostty. Disabled by default in this
+/// fork.
 @"gtk-editor-control": bool = false,
+
+/// Additionally allow the editor-control `Split` method to open panes that
+/// run arbitrary programs. Any process that can reach your session bus,
+/// including sandboxed apps granted session-bus access, can then launch
+/// commands outside its sandbox. Only takes effect with `gtk-editor-control`.
+@"gtk-editor-control-spawn": bool = false,
 
 /// Render project-colored GTK tabs using the deterministic project palette.
 /// Tab placement still follows `gtk-tabs-location`.
