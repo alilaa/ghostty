@@ -285,6 +285,9 @@ fn splitMethod(
     if (cwd_s.len > 0) overrides.working_directory = alloc.dupeSentinel(u8, cwd_s, 0) catch
         return invocation.returnDbusError(invalid, "Out of memory");
 
+    // A surface in a background tab is unmapped, so a split added there would
+    // never realize; bring the tab forward first.
+    surface.present();
     tree.newSplit(switch (dir) {
         .left => .left,
         .right => .right,
