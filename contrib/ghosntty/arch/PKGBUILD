@@ -11,7 +11,7 @@ depends=(
     'libpng' 'zlib' 'oniguruma' 'libglvnd' 'glib2' 'wayland' 'libx11'
     "gtk4>=1:$(pkg-config --modversion gtk4)"
     "libadwaita>=1:$(pkg-config --modversion libadwaita-1)"
-    'gtk4-layer-shell' 'python' 'python-gobject'
+    'gtk4-layer-shell' 'python' 'python-gobject' 'librsvg'
 )
 optdepends=(
     'ttf-jetbrains-mono-nerd: terminal font matching the bundled profile'

@@ -95,6 +95,14 @@ the PTY foreground executable as well as the pane title, so spinner titles
 without the word Codex retain that tab's color. Attention markers still turn
 the tab red. Title-only updates reuse existing buttons and stylesheets.
 
+The strip is 22px tall with 16px text. The current tab is bold with a 3px top
+bar in its contrasting text color, while other tabs are dimmed until hovered.
+Switching tabs inverts the new tab's colors and pulses a ring around it for
+three seconds before fading back. Tabs whose foreground job is Neovim show the
+Neovim logo, a center dot and that instance's working directory, read from
+procfs (including the `--embed` server, so `:cd` is followed) and polled once
+per second while the strip is visible. Neovim logo by Jason Long, CC BY 3.0.
+
 `gtk-editor-control` exports the versioned D-Bus interface
 `com.ghosntty.GhosnTTy.EditorControl1` at `/com/ghosntty/GhosnTTy/EditorControl`.
 It accepts `Execute(surface: uint64, operation: string, value: string,

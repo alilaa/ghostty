@@ -2132,22 +2132,58 @@ pub const Surface = extern struct {
     /// foreground job so returning to the shell immediately restores colors.
     /// This only reads procfs; no commands are launched from tab rendering.
     pub fn isForegroundCodex(self: *Self) bool {
-        if (comptime @import("builtin").os.tag != .linux) return false;
-        const core_surface = self.core() orelse return false;
-        const pid = core_surface.getProcessInfo(.foreground_pid) orelse return false;
-        if (pid == 0) return false;
+        const pid = self.foregroundPid() orelse return false;
+        return processMatches(pid, project_colors.isCodexExecutable);
+    }
+
+    /// The working directory of a foreground Neovim, abbreviated by the
+    /// caller. Neovim's TUI runs the editor in an `--embed` child, which is
+    /// the process `:cd` actually changes, so prefer that child's directory.
+    pub fn foregroundNvimCwd(self: *Self, buf: []u8) ?[]const u8 {
+        const pid = self.foregroundPid() orelse return null;
+        if (!processMatches(pid, project_colors.isNvimExecutable)) return null;
+        var path_buf: [64]u8 = undefined;
+        const children_path = std.mem.print(&path_buf, "/proc/{d}/task/{d}/children", .{ pid, pid }) catch return null;
+        var children_buf: [256]u8 = undefined;
+        if (std.Io.Dir.cwd().readFile(global.io(), children_path, &children_buf)) |children| {
+            var it = std.mem.tokenizeAny(u8, children, " \n");
+            while (it.next()) |child| {
+                const child_pid = std.fmt.parseInt(u64, child, 10) catch continue;
+                if (!processMatches(child_pid, project_colors.isNvimExecutable)) continue;
+                if (processCwd(child_pid, buf)) |cwd| return cwd;
+            }
+        } else |_| {}
+        return processCwd(pid, buf);
+    }
+
+    fn foregroundPid(self: *Self) ?u64 {
+        if (comptime @import("builtin").os.tag != .linux) return null;
+        const core_surface = self.core() orelse return null;
+        const pid = core_surface.getProcessInfo(.foreground_pid) orelse return null;
+        return if (pid == 0) null else pid;
+    }
+
+    /// This only reads procfs; no commands are launched from tab rendering.
+    fn processMatches(pid: u64, comptime matches: fn ([]const u8) bool) bool {
         var path_buf: [64]u8 = undefined;
         const path = std.mem.print(&path_buf, "/proc/{d}/exe", .{pid}) catch return false;
         var executable: [std.Io.Dir.max_path_bytes]u8 = undefined;
         if (std.Io.Dir.readLinkAbsolute(global.io(), path, &executable)) |len| {
-            return project_colors.isCodexExecutable(executable[0..len]);
+            return matches(executable[0..len]);
         } else |_| {
             // The task name is still available on systems restricting exe links.
             const comm_path = std.mem.print(&path_buf, "/proc/{d}/comm", .{pid}) catch return false;
             var comm_buf: [32]u8 = undefined;
             const comm = std.Io.Dir.cwd().readFile(global.io(), comm_path, &comm_buf) catch return false;
-            return project_colors.isCodexExecutable(std.mem.trimEnd(u8, comm, "\n"));
+            return matches(std.mem.trimEnd(u8, comm, "\n"));
         }
+    }
+
+    fn processCwd(pid: u64, buf: []u8) ?[]const u8 {
+        var path_buf: [64]u8 = undefined;
+        const path = std.mem.print(&path_buf, "/proc/{d}/cwd", .{pid}) catch return null;
+        const len = std.Io.Dir.readLinkAbsolute(global.io(), path, buf) catch return null;
+        return buf[0..len];
     }
 
     /// Returns the effective title: the user-overridden title if set,

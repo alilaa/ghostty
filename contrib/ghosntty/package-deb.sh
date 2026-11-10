@@ -40,7 +40,7 @@ Section: x11
 Priority: optional
 Architecture: $arch
 Maintainer: GhosnTTy contributors <alilaa@users.noreply.github.com>
-Depends: $dependencies, python3, python3-gi
+Depends: $dependencies, python3, python3-gi, librsvg2-common
 Recommends: fonts-jetbrains-mono, fonts-noto-color-emoji
 Installed-Size: $(du -sk "$root/usr" | cut -f1)
 Homepage: https://github.com/alilaa/ghostty

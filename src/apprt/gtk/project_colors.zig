@@ -20,11 +20,20 @@ pub fn background(project: []const u8, pane_title: []const u8, codex_process: bo
 }
 
 pub fn isCodexExecutable(path: []const u8) bool {
+    return executableNamed(path, "codex");
+}
+
+pub fn isNvimExecutable(path: []const u8) bool {
+    return executableNamed(path, "nvim");
+}
+
+fn executableNamed(path: []const u8, expected: []const u8) bool {
     // Linux appends this suffix when an executable is upgraded while running.
     const executable = std.mem.cutSuffix(u8, path, " (deleted)") orelse path;
     const start = if (std.mem.lastIndexOfAny(u8, executable, "/\\")) |i| i + 1 else 0;
     const name = executable[start..];
-    return std.ascii.eqlIgnoreCase(name, "codex") or std.ascii.eqlIgnoreCase(name, "codex.exe");
+    const stem = if (name.len == expected.len + 4 and std.ascii.endsWithIgnoreCase(name, ".exe")) name[0..expected.len] else name;
+    return std.ascii.eqlIgnoreCase(stem, expected);
 }
 
 fn isCodex(title: []const u8) bool {
@@ -81,6 +90,15 @@ test "project colors recognize the Codex executable rather than parent directory
     }
     for ([_][]const u8{ "", "/home/codex/zsh", "/opt/codex/node", "codexical", "codex-helper" }) |path| {
         try std.testing.expect(!isCodexExecutable(path));
+    }
+}
+
+test "project colors recognize the Neovim executable" {
+    for ([_][]const u8{ "nvim", "/usr/bin/nvim", "/tmp/.mount_nvimAb12/usr/bin/nvim", "/usr/bin/nvim (deleted)" }) |path| {
+        try std.testing.expect(isNvimExecutable(path));
+    }
+    for ([_][]const u8{ "", "vim", "/usr/bin/vim", "/home/nvim/zsh", "nvim-qt", "/usr/bin/codex" }) |path| {
+        try std.testing.expect(!isNvimExecutable(path));
     }
 }
 

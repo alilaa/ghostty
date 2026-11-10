@@ -1,12 +1,6 @@
-/* Match the terminal font and keep the project strip to one text row. */
+/* Match the terminal font in the project strip. Sizing, the active-tab bar
+   and the switch flash come from GhosnTTy itself; overriding box-shadow,
+   min-height, padding or font-size here would undo them. */
 button.project-tab {
   font-family: "JetBrainsMono Nerd Font Mono", "JetBrains Mono", monospace;
-  font-size: 11pt;
-  min-height: 0;
-  min-width: 0;
-  padding: 0 6px;
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
 }
