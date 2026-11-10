@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run from a terminal with access to your existing GitHub/SSH credentials.
 set -euo pipefail
-tag=${1:-ghosntty-v1.4.0-10}
+tag=${1:-ghosntty-v1.4.0-11}
 [[ $tag =~ ^ghosntty-v[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$ ]] || { echo 'Invalid release tag' >&2; exit 2; }
 cd -- "$(dirname -- "$0")/../.."
 [[ -z $(git status --porcelain) ]] || { echo 'Commit changes before publishing.' >&2; exit 1; }

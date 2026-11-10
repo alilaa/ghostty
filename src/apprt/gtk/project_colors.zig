@@ -74,6 +74,15 @@ pub fn hover(color: u24) u24 {
     return result;
 }
 
+pub fn brighten(color: u24) u24 {
+    var result: u24 = 0;
+    inline for (.{ 0, 8, 16 }) |shift| {
+        const c: u32 = @as(u8, @truncate(color >> shift));
+        result |= @as(u24, @intCast(c + (255 - c) * 30 / 100)) << shift;
+    }
+    return result;
+}
+
 test "project colors preserve WezTerm hash results" {
     try std.testing.expectEqual(@as(u24, 0xffd866), forProject("ghostty"));
     try std.testing.expectEqual(palette[0], background("repo", "⠋ Codex", false, palette[0]));

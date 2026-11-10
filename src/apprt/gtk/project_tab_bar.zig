@@ -28,7 +28,7 @@ poll_source: ?c_uint = null,
 
 /// The whole strip is exactly this tall; the font is sized to fit it.
 const bar_height = 22;
-const flash_ms = 3000;
+const flash_ms = 1000;
 /// Foreground jobs (e.g. Neovim and its working directory) change without
 /// any title or property notification, so poll while the strip is shown.
 const poll_ms = 1000;
@@ -117,12 +117,12 @@ pub fn refresh(self: *Self) void {
             &css_buf,
             "{s}button.project-tab {{ background-color: #{x:0>6}; color: #{x:0>6}; }} " ++
                 "button.project-tab:hover {{ background-color: #{x:0>6}; }} " ++
-                // A bar in the contrasting text color marks the current tab.
-                "button.project-tab.active {{ box-shadow: inset 0 3px #{x:0>6}; }} " ++
-                // Switching inverts the new tab and pulses a ring around it.
-                "button.project-tab.flash {{ background-color: #{x:0>6}; color: #{x:0>6}; " ++
-                "animation: project-tab-pulse 400ms ease-in-out infinite alternate; }}",
-            .{ compact_css, bg, fg, colors.hover(bg), fg, fg, bg },
+                // Switching pulses the new tab brighter within 150 ms, then fades back.
+                "@keyframes project-tab-flash {{ " ++
+                "0%, 100% {{ background-color: #{x:0>6}; }} " ++
+                "15% {{ background-color: #{x:0>6}; }} }} " ++
+                "button.project-tab.flash {{ animation: project-tab-flash {d}ms ease-out 1; }}",
+            .{ compact_css, bg, fg, colors.hover(bg), bg, colors.brighten(bg), flash_ms },
             0,
         ) catch continue;
         css.loadFromString(style);
@@ -189,16 +189,12 @@ fn poll(ud: ?*anyopaque) callconv(.c) c_int {
 // Both labels and close controls must override the theme's button minimums.
 // Inactive tabs are dimmed so the current one stands out at a glance.
 const compact_css = std.fmt.comptimePrint(
-    "@keyframes project-tab-pulse {{ " ++
-        "from {{ box-shadow: inset 0 3px currentColor, inset 0 0 0 1px currentColor; }} " ++
-        "to {{ box-shadow: inset 0 3px currentColor, inset 0 0 0 3px currentColor; }} }} " ++
-        "button.project-tab {{ " ++
+    "button.project-tab {{ " ++
         "background-image: none; min-height: {d}px; min-width: 0; " ++
         "border: none; border-radius: 0; box-shadow: none; " ++
-        "margin: 0; padding: 0 8px; font-size: 16px; opacity: 0.6; " ++
+        "margin: 0; padding: 0 8px; font-size: 16px; opacity: 0.75; " ++
         "transition: background-color 500ms ease-out, color 500ms ease-out, opacity 200ms ease-out; }} " ++
         "button.project-tab:hover, button.project-tab.active {{ opacity: 1; }} " ++
-        "button.project-tab.active {{ font-weight: bold; }} " ++
         "button.project-tab label {{ min-height: 0; }} ",
     .{bar_height},
 );
@@ -215,7 +211,7 @@ fn updateTitle(button: *gtk.Button, page: *adw.TabPage, active: bool) void {
     const progress: []const u8 = if (tab) |t| progressText(&progress_buf, progressReport(t)) else "";
     var marker_buf: [64]u8 = undefined;
     const marker_text = std.mem.printSentinel(&marker_buf, "{s}{s}", .{
-        if (active) @as([]const u8, "● ") else "  ",
+        if (active) @as([]const u8, "▸ ") else "  ",
         progress,
     }, 0) catch "";
     setLabel(marker, marker_text);

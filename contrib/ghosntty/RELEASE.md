@@ -1,7 +1,7 @@
 GhosnTTy for **Arch Linux and Ubuntu 26.04, x86-64**.
 
 - Compact project-colored bottom tabs; no new-tab button. Use Ctrl+Shift+U.
-- 22px tab bar with a top-bar active indicator and a brief flash on tab switch.
+- 22px tab bar with a caret on the current tab and a brief brighten-and-fade flash on tab switch.
 - Neovim tabs show the Neovim logo and that instance's working directory.
 - One random palette color per Codex tab, stable through spinner updates;
   red only while waiting for input, then back to the same color.
