@@ -32,7 +32,7 @@ also works with an empty user configuration directory.
 From a clean, committed checkout with GitHub SSH authentication:
 
 ```sh
-bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-11
+bash contrib/ghosntty/publish.sh ghosntty-v1.4.0-12
 ```
 
 This pushes the current branch and release tag. The package's command is
@@ -86,16 +86,16 @@ override the changing pane title, so a Codex spinner does not change identity.
 It preserves the sixteen-color djb2 palette, contrasting text, hover tint,
 active marker, and Codex attention states. Each tab receives one random palette
 color for Codex, retained through spinner updates and attention/resume cycles.
-Only the attention state overrides it with red. The compact strip keeps close
-buttons and omits the new-tab button; use Ctrl+Shift+U to open tabs. Closing
-uses the existing tab lifecycle. Keyboard tab switching and reordering continue
+Only the attention state overrides it with red. The compact strip has no close
+or new-tab buttons; use Ctrl+Shift+U to open tabs and the usual close
+actions to close them. Keyboard tab switching and reordering continue
 to use Ghostty actions. The custom strip does not yet implement drag-to-reorder,
 drag-to-detach, or the native tab context menu. On Linux, Codex detection checks
 the PTY foreground executable as well as the pane title, so spinner titles
 without the word Codex retain that tab's color. Attention markers still turn
 the tab red. Title-only updates reuse existing buttons and stylesheets.
 
-The strip is 22px tall with 16px text. The current tab is marked with a small caret, while other tabs are dimmed until hovered.
+The strip is 24px tall with 17px text. The current tab is marked with a small caret, while other tabs are dimmed until hovered.
 Switching tabs flashes the new tab brighter within 150 ms,
 then fades back over the remaining 850 ms. Tabs whose foreground job is Neovim show the
 Neovim logo, a center dot and that instance's working directory, read from

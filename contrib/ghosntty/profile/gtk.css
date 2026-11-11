@@ -3,4 +3,5 @@
    min-height, padding or font-size here would undo them. */
 button.project-tab {
   font-family: "JetBrainsMono Nerd Font Mono", "JetBrains Mono", monospace;
+  font-weight: 400;
 }

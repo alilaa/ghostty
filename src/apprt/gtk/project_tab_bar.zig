@@ -27,7 +27,7 @@ flash_source: ?c_uint = null,
 poll_source: ?c_uint = null,
 
 /// The whole strip is exactly this tall; the font is sized to fit it.
-const bar_height = 22;
+const bar_height = 24;
 const flash_ms = 1000;
 /// Foreground jobs (e.g. Neovim and its working directory) change without
 /// any title or property notification, so poll while the strip is shown.
@@ -144,13 +144,6 @@ pub fn refresh(self: *Self) void {
         _ = gtk.Button.signals.clicked.connect(button, *adw.TabPage, selectPage, page, .{});
         const group = gtk.Box.new(.horizontal, 0);
         group.append(button.as(gtk.Widget));
-        const close = gtk.Button.newWithLabel("×");
-        styleTab(close.as(gtk.Widget), active, flashing);
-        close.as(gtk.Widget).setFocusOnClick(0);
-        close.as(gtk.Widget).setTooltipText("Close tab");
-        close.as(gtk.Widget).getStyleContext().addProvider(css.as(gtk.StyleProvider), gtk.STYLE_PROVIDER_PRIORITY_APPLICATION);
-        _ = gtk.Button.signals.clicked.connect(close, *adw.TabPage, closePage, page, .{});
-        group.append(close.as(gtk.Widget));
         self.box.append(group.as(gtk.Widget));
     }
 }
@@ -186,13 +179,13 @@ fn poll(ud: ?*anyopaque) callconv(.c) c_int {
     return 1;
 }
 
-// Both labels and close controls must override the theme's button minimums.
+// Labels must override the theme's button minimums.
 // Inactive tabs are dimmed so the current one stands out at a glance.
 const compact_css = std.fmt.comptimePrint(
     "button.project-tab {{ " ++
         "background-image: none; min-height: {d}px; min-width: 0; " ++
         "border: none; border-radius: 0; box-shadow: none; " ++
-        "margin: 0; padding: 0 8px; font-size: 16px; opacity: 0.75; " ++
+        "margin: 0; padding: 0 9px; font-size: 17px; opacity: 0.75; " ++
         "transition: background-color 500ms ease-out, color 500ms ease-out, opacity 200ms ease-out; }} " ++
         "button.project-tab:hover, button.project-tab.active {{ opacity: 1; }} " ++
         "button.project-tab label {{ min-height: 0; }} ",
@@ -314,11 +307,4 @@ fn selectPage(button: *gtk.Button, page: *adw.TabPage) callconv(.c) void {
     if (gobject.ext.cast(Tab, page.getChild())) |tab| {
         if (tab.getActiveSurface()) |surface| surface.grabFocus();
     }
-}
-
-fn closePage(button: *gtk.Button, page: *adw.TabPage) callconv(.c) void {
-    _ = button.ref();
-    defer button.unref();
-    const window = ext.getAncestor(Window, button.as(gtk.Widget)) orelse return;
-    window.getTabView().closePage(page);
 }
