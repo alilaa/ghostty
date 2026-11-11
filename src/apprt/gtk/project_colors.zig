@@ -1,11 +1,13 @@
-//! Project identity colors, matching Anton's WezTerm djb2 palette.
+//! Project identity colors, chosen with Anton's WezTerm djb2 hash.
 const std = @import("std");
 
+// Muted, mid-lightness colors so tab colors stay low-contrast and the eye
+// focuses on the tab label instead.
 pub const palette = [_]u24{
-    0xe06c75, 0xe5c07b, 0x98c379, 0x56b6c2,
-    0x61afef, 0xc678dd, 0xd19a66, 0xbe5046,
-    0x528bff, 0x2bbac5, 0xa9dc76, 0xff6ac1,
-    0xffd866, 0x78dce8, 0xab9df2, 0xff9e64,
+    0x8c5a5f, 0x8c7a56, 0x66805a, 0x4f7f84,
+    0x587592, 0x7a6590, 0x8a6d55, 0x7e5650,
+    0x5a6a94, 0x4b7d82, 0x72805a, 0x8c5f7c,
+    0x857a52, 0x568090, 0x70689a, 0x8a6650,
 };
 
 pub fn forProject(name: []const u8) u24 {
@@ -84,7 +86,7 @@ pub fn brighten(color: u24) u24 {
 }
 
 test "project colors preserve WezTerm hash results" {
-    try std.testing.expectEqual(@as(u24, 0xffd866), forProject("ghostty"));
+    try std.testing.expectEqual(@as(u24, 0x857a52), forProject("ghostty"));
     try std.testing.expectEqual(palette[0], background("repo", "⠋ Codex", false, palette[0]));
     try std.testing.expectEqual(@as(u24, 0xff3b30), background("repo", "[ ! ] Codex", false, palette[0]));
     try std.testing.expectEqual(forProject("repo"), background("repo", "codexical", false, palette[0]));
