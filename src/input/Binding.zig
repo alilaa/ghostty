@@ -536,8 +536,9 @@ pub const Action = union(enum) {
     ///
     write_scrollback_file: WriteScreen,
 
-    /// Export plain-text scrollback and invoke this executable with the
-    /// temporary file path as its only argument. No shell is involved.
+    /// Export the complete active buffer as plain text (scrollback plus visible
+    /// rows, or visible rows on alternate screens) and invoke this executable
+    /// with the temporary file path as its only argument. No shell is involved.
     /// The executable must remove the file and its parent directory when done.
     write_scrollback_file_command: []const u8,
 

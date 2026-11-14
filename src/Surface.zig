@@ -5942,7 +5942,11 @@ fn writeScreenFile(
         // the file and write the empty file to the pty so that this
         // command always works on the primary screen.
         const pages = &self.io.terminal.screens.active.pages;
-        const sel_: ?terminal.Selection = switch (loc) {
+        // The custom picker needs the complete buffer, including the visible
+        // rows. History alone can be empty on a fresh shell or an alternate
+        // screen, which would silently skip launching its command.
+        const content_loc: WriteScreenLoc = if (command != null) .screen else loc;
+        const sel_: ?terminal.Selection = switch (content_loc) {
             .history => history: {
                 // We do not support this for alternate screens
                 // because they don't have scrollback anyways.
