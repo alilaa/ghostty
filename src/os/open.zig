@@ -31,7 +31,7 @@ pub fn open(
         }
     }
 
-    var spawn_opts: std.process.SpawnOptions = switch (builtin.target.os.tag) {
+    const spawn_opts: std.process.SpawnOptions = switch (builtin.target.os.tag) {
         .linux, .freebsd => .{ .argv = &.{ "xdg-open", url } },
         .windows => .{ .argv = &.{ "rundll32", "url.dll,FileProtocolHandler", url } },
         .macos => switch (kind) {
@@ -42,6 +42,16 @@ pub fn open(
         .ios => return error.Unimplemented,
         else => @compileError("unsupported OS"),
     };
+    try spawnAndWatch(spawn_opts);
+}
+
+/// Launch an explicit argv without a shell or desktop file association.
+pub fn openCommand(argv: []const []const u8) !void {
+    try spawnAndWatch(.{ .argv = argv, .stdin = .ignore });
+}
+
+fn spawnAndWatch(options: std.process.SpawnOptions) !void {
+    var spawn_opts = options;
     // Ignore anything from stdout. This must be set before spawning the
     // process.
     spawn_opts.stdout = .ignore;
@@ -67,7 +77,11 @@ pub fn open(
         // Non-snap releases don't need to alter the env.
         try std.process.spawn(global.io(), spawn_opts);
 
-    const thread = try std.Thread.spawn(.{}, openThread, .{ global.io(), exe });
+    const thread = std.Thread.spawn(.{}, openThread, .{ global.io(), exe }) catch |err| {
+        var child = exe;
+        child.kill(global.io());
+        return err;
+    };
     thread.detach();
 }
 

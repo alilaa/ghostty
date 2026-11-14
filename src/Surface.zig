@@ -5480,16 +5480,24 @@ pub fn performBindingAction(self: *Surface, action: input.Binding.Action) !bool 
         .write_screen_file => |v| try self.writeScreenFile(
             .screen,
             v,
+            null,
         ),
 
         .write_scrollback_file => |v| try self.writeScreenFile(
             .history,
             v,
+            null,
         ),
+
+        .write_scrollback_file_command => |command| {
+            if (command.len == 0) return error.InvalidCommand;
+            try self.writeScreenFile(.history, .open, command);
+        },
 
         .write_selection_file => |v| try self.writeScreenFile(
             .selection,
             v,
+            null,
         ),
 
         .new_tab => return try self.rt_app.performAction(
@@ -5889,6 +5897,7 @@ fn writeScreenFile(
     self: *Surface,
     loc: WriteScreenLoc,
     write_screen: input.Binding.Action.WriteScreen,
+    command: ?[]const u8,
 ) !void {
     // Create a temporary directory to store our scrollback.
     var tmp_dir = try internal_os.TempDir.init();
@@ -5994,6 +6003,12 @@ fn writeScreenFile(
         filename,
         &path_buf,
     )];
+
+    if (command) |executable| {
+        try internal_os.openCommand(&.{ executable, path });
+        retain_tmp_dir = true;
+        return;
+    }
 
     switch (write_screen.action) {
         .copy => {

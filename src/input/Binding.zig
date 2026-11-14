@@ -536,6 +536,11 @@ pub const Action = union(enum) {
     ///
     write_scrollback_file: WriteScreen,
 
+    /// Export plain-text scrollback and invoke this executable with the
+    /// temporary file path as its only argument. No shell is involved.
+    /// The executable must remove the file and its parent directory when done.
+    write_scrollback_file_command: []const u8,
+
     /// Write the contents of the screen into a temporary file with the
     /// specified action.
     ///
@@ -1416,6 +1421,7 @@ pub const Action = union(enum) {
             .adjust_selection,
             .jump_to_prompt,
             .write_scrollback_file,
+            .write_scrollback_file_command,
             .write_screen_file,
             .write_selection_file,
             .close_surface,
@@ -4921,4 +4927,15 @@ test "set: formatEntries leaf_chained with text action" {
         \\
     ;
     try testing.expectEqualStrings(expected, output.written());
+}
+
+test "parse: scrollback file command keeps executable literal" {
+    const testing = std.testing;
+    const binding = try parseSingle("ctrl+shift+x=write_scrollback_file_command:/tmp/a path/helper;$HOME");
+    try testing.expectEqualStrings("/tmp/a path/helper;$HOME", binding.action.write_scrollback_file_command);
+    try testing.expectEqual(Action.Scope.surface, binding.action.scope());
+    var buf: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer buf.deinit();
+    try binding.action.format(&buf.writer);
+    try testing.expectEqualStrings("write_scrollback_file_command:/tmp/a path/helper;$HOME", buf.written());
 }
