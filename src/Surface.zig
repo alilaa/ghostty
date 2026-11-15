@@ -5932,6 +5932,8 @@ fn writeScreenFile(
     var buf: [4096]u8 = undefined;
     var file_writer = file.writer(global.io(), &buf);
     var buf_writer = &file_writer.interface;
+    var cursor_buf: [256]u8 = undefined;
+    var cursor_json: []const u8 = "{}";
 
     // Write the scrollback contents. This requires a lock.
     {
@@ -5942,6 +5944,12 @@ fn writeScreenFile(
         // the file and write the empty file to the pty so that this
         // command always works on the primary screen.
         const pages = &self.io.terminal.screens.active.pages;
+        if (command != null) {
+            const cursor = self.io.terminal.screens.active.cursor;
+            const point = pages.pointFromPin(.screen, cursor.page_pin.*).?.screen;
+            const bottom = pages.pointFromPin(.screen, pages.getBottomRight(.screen).?).?.screen;
+            cursor_json = try std.fmt.bufPrint(&cursor_buf, "{{\"row\":{d},\"column\":{d},\"rows\":{d}}}", .{ point.y + 1, cursor.x + 1, bottom.y + 1 });
+        }
         // The custom picker needs the complete buffer, including the visible
         // rows. History alone can be empty on a fresh shell or an alternate
         // screen, which would silently skip launching its command.
@@ -5986,7 +5994,7 @@ fn writeScreenFile(
                 .vt => .vt,
                 .html => .html,
             },
-            .unwrap = true,
+            .unwrap = command == null,
             .trim = false,
             .background = self.io.terminal.colors.background.get(),
             .foreground = self.io.terminal.colors.foreground.get(),
@@ -6012,7 +6020,7 @@ fn writeScreenFile(
         if (comptime @hasDecl(apprt.runtime.Surface, "scrollbackGeometry")) {
             var geometry_buf: [256]u8 = undefined;
             const geometry = try self.rt_surface.scrollbackGeometry(&geometry_buf);
-            try internal_os.openCommand(&.{ executable, path, geometry });
+            try internal_os.openCommand(&.{ executable, path, geometry, cursor_json });
         } else {
             try internal_os.openCommand(&.{ executable, path });
         }
