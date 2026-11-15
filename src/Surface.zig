@@ -6009,7 +6009,13 @@ fn writeScreenFile(
     )];
 
     if (command) |executable| {
-        try internal_os.openCommand(&.{ executable, path });
+        if (comptime @hasDecl(apprt.runtime.Surface, "scrollbackGeometry")) {
+            var geometry_buf: [256]u8 = undefined;
+            const geometry = try self.rt_surface.scrollbackGeometry(&geometry_buf);
+            try internal_os.openCommand(&.{ executable, path, geometry });
+        } else {
+            try internal_os.openCommand(&.{ executable, path });
+        }
         retain_tmp_dir = true;
         return;
     }

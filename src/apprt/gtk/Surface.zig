@@ -54,6 +54,25 @@ pub fn getSize(self: *const Self) !apprt.SurfaceSize {
     return self.surface.getSize();
 }
 
+/// Active terminal pane in window-relative logical pixels, excluding tabs.
+pub fn scrollbackGeometry(self: *const Self, buf: []u8) ![]const u8 {
+    const gtk = @import("gtk");
+    const gobject = @import("gobject");
+    const graphene = @import("graphene");
+    const widget = self.surface.as(gtk.Widget);
+    const root = widget.getRoot() orelse return error.NoWindow;
+    const window = gobject.ext.cast(gtk.Widget, root) orelse return error.NoWindow;
+    var origin: graphene.Point = undefined;
+    if (widget.computePoint(window, &.{ .f_x = 0, .f_y = 0 }, &origin) == 0)
+        return error.NoWindow;
+    return std.fmt.bufPrint(buf, "{{\"x\":{d},\"y\":{d},\"width\":{d},\"height\":{d}}}", .{
+        @as(i32, @intFromFloat(@round(origin.f_x))),
+        @as(i32, @intFromFloat(@round(origin.f_y))),
+        widget.getWidth(),
+        widget.getHeight(),
+    });
+}
+
 pub fn getCursorPos(self: *const Self) !apprt.CursorPos {
     return self.surface.getCursorPos();
 }
