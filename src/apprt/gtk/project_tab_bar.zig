@@ -252,6 +252,12 @@ fn setLabel(label: *gtk.Label, text: [*:0]const u8) void {
 }
 
 /// The Neovim logo, decoded once and shared by every tab in the process.
+///
+/// The logo (by Jason Long, CC BY 3.0) is the 128px `nvim.png` icon that
+/// Neovim ships, downscaled to 32px. It is a PNG on purpose: GTK decodes
+/// PNG with its built-in loader, whereas SVG goes through glycin, which
+/// spawns sandboxed loader threads and processes and coincided with GL
+/// rendering corruption and frozen windows.
 fn nvimLogo() ?*gdk.Texture {
     const State = struct {
         var texture: ?*gdk.Texture = null;
@@ -259,8 +265,8 @@ fn nvimLogo() ?*gdk.Texture {
     };
     if (State.loaded) return State.texture;
     State.loaded = true;
-    const svg = @embedFile("nvim-logo.svg");
-    const bytes = glib.Bytes.new(svg.ptr, svg.len);
+    const png = @embedFile("nvim-logo.png");
+    const bytes = glib.Bytes.new(png.ptr, png.len);
     defer bytes.unref();
     var gerr: ?*glib.Error = null;
     State.texture = gdk.Texture.newFromBytes(bytes, &gerr);
