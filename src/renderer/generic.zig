@@ -201,6 +201,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// This is used when updating custom shader uniforms.
         last_frame_time: ?std.Io.Timestamp = null,
 
+        /// When the cursor last changed or the surface last gained focus.
+        /// The `cursor` custom shader animation mode animates for
+        /// cursor_animation_window_ms after this.
+        custom_shader_activity_time: ?std.Io.Timestamp = null,
+
         /// The font structures.
         font_grid: *font.SharedGrid,
         font_shaper: font.Shaper,
@@ -1108,6 +1113,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// i.e. 120fps, and the floor for any animation wake delay.
         pub const draw_interval_ms: u64 = 8;
 
+        /// How long the `cursor` custom shader animation mode keeps
+        /// animating after the cursor changes or focus is gained.
+        const cursor_animation_window_ms = 1000;
+
         /// A point in the future when the renderer needs to be driven
         /// again to keep animating, and what kind of drive it needs.
         pub const AnimationWake = struct {
@@ -1142,6 +1151,18 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .false => null,
                     .always => draw_interval_ms,
                     .true => if (self.focused) draw_interval_ms else null,
+                    .cursor => cursor: {
+                        if (!self.focused) break :cursor null;
+                        const since = self.custom_shader_activity_time orelse
+                            break :cursor null;
+                        const now: std.Io.Timestamp = .now(global.io(), .awake);
+                        const elapsed_ms = @divTrunc(
+                            since.durationTo(now).nanoseconds,
+                            std.time.ns_per_ms,
+                        );
+                        if (elapsed_ms >= cursor_animation_window_ms) break :cursor null;
+                        break :cursor draw_interval_ms;
+                    },
                 };
             };
 
@@ -2537,6 +2558,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     uniforms.current_cursor = new_cursor;
                     uniforms.current_cursor_color = cursor_color;
                     uniforms.cursor_change_time = uniforms.time;
+                    self.custom_shader_activity_time = now;
                 }
             }
 
@@ -2551,6 +2573,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (self.custom_shader_focused_changed and self.focused) {
                 uniforms.time_focus = uniforms.time;
                 self.custom_shader_focused_changed = false;
+                self.custom_shader_activity_time = now;
             }
         }
 

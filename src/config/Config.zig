@@ -3259,6 +3259,11 @@ keybind: Keybinds = .{},
 /// will use more CPU per terminal surface and can become quite expensive
 /// depending on the shader and your terminal usage.
 ///
+/// This can also be set to `cursor`, which runs the animation loop on the
+/// focused terminal surface only for one second after the cursor moves or
+/// changes color, or after the surface gains focus. This suits cursor
+/// effect shaders: they animate on input but the GPU stays idle otherwise.
+///
 /// This can be changed at runtime and will affect all open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
@@ -5529,6 +5534,7 @@ pub const CustomShaderAnimation = enum(c_int) {
     false,
     true,
     always,
+    cursor,
 };
 
 /// Valid values for macos-non-native-fullscreen
