@@ -37,8 +37,13 @@ pub fn init(view: *adw.TabView) Self {
     const box = gtk.Box.new(.horizontal, 0);
     const scroll = gtk.ScrolledWindow.new();
     _ = scroll.as(gobject.Object).refSink();
-    scroll.setPolicy(.automatic, .never);
+    // A size request is only a minimum. The external vertical policy stops the
+    // strip from measuring its content's height, so emoji, the Neovim logo or
+    // font fallback can never grow it and resize the terminal panes below.
+    scroll.setPolicy(.automatic, .external);
     scroll.setChild(box.as(gtk.Widget));
+    scroll.setMinContentHeight(bar_height);
+    scroll.setMaxContentHeight(bar_height);
     scroll.as(gtk.Widget).setSizeRequest(-1, bar_height);
     scroll.as(gtk.Widget).setVisible(0);
     return .{ .view = view, .scroll = scroll, .box = box };
