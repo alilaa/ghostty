@@ -7,6 +7,7 @@ const gl = @import("opengl");
 const egl = gl.egl;
 const shadertoy = @import("shadertoy.zig");
 const apprt = @import("../apprt.zig");
+const global = @import("../global.zig");
 const font = @import("../font/main.zig");
 const configpkg = @import("../config.zig");
 const rendererpkg = @import("../renderer.zig");
@@ -49,6 +50,17 @@ device: *const Device,
 
 egl_context: *gl.egl.Context,
 
+/// Whether `egl_context` was created with a lose-context-on-reset
+/// notification strategy, so GPU resets can be detected.
+robust: bool,
+
+/// glGetGraphicsResetStatus, loaded on the render thread for robust
+/// contexts. Not part of the generated GL 4.3 bindings.
+get_graphics_reset_status: ?*const fn () callconv(.c) gl.c.GLenum = null,
+
+/// Whether a GPU reset has already been reported for this context.
+gpu_reset_reported: bool = false,
+
 pub fn init(
     alloc: Allocator,
     device: *const Device,
@@ -62,13 +74,27 @@ pub fn init(
 
     // Create our context. Contexts are surface-scoped because a
     // context can only be current on one thread at a time.
+    //
+    // Prefer a context that reports GPU resets (driver timeouts, device
+    // removal) so we can log them; without this a reset leaves the
+    // surface silently frozen. Not every driver supports it.
+    var robust = true;
     const context = egl.Context.create(display, device.config, null, &.{
-        egl.c.EGL_CONTEXT_MAJOR_VERSION,       MIN_VERSION_MAJOR,
-        egl.c.EGL_CONTEXT_MINOR_VERSION,       MIN_VERSION_MINOR,
-        egl.c.EGL_CONTEXT_OPENGL_PROFILE_MASK, egl.c.EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
-    }) catch |err| {
-        log.warn("failed to create EGL context err={}", .{err});
-        return err;
+        egl.c.EGL_CONTEXT_MAJOR_VERSION,                      MIN_VERSION_MAJOR,
+        egl.c.EGL_CONTEXT_MINOR_VERSION,                      MIN_VERSION_MINOR,
+        egl.c.EGL_CONTEXT_OPENGL_PROFILE_MASK,                egl.c.EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        egl.c.EGL_CONTEXT_OPENGL_RESET_NOTIFICATION_STRATEGY, egl.c.EGL_LOSE_CONTEXT_ON_RESET,
+    }) catch |robust_err| fallback: {
+        log.info("GPU reset notification unavailable err={}", .{robust_err});
+        robust = false;
+        break :fallback egl.Context.create(display, device.config, null, &.{
+            egl.c.EGL_CONTEXT_MAJOR_VERSION,       MIN_VERSION_MAJOR,
+            egl.c.EGL_CONTEXT_MINOR_VERSION,       MIN_VERSION_MINOR,
+            egl.c.EGL_CONTEXT_OPENGL_PROFILE_MASK, egl.c.EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+        }) catch |err| {
+            log.warn("failed to create EGL context err={}", .{err});
+            return err;
+        };
     };
     errdefer context.destroy(display) catch {};
 
@@ -86,6 +112,7 @@ pub fn init(
         .blending = opts.config.blending,
         .device = device,
         .egl_context = context,
+        .robust = robust,
     };
 }
 
@@ -203,6 +230,13 @@ pub fn threadEnter(self: *OpenGL, surface: *apprt.Surface) !void {
     try self.device.display.makeCurrent(null, null, self.egl_context);
     // Load our function pointers for this thread's threadlocal.
     try prepareContext(&gl.egl.getProcAddress);
+
+    if (self.robust) {
+        const proc = gl.egl.getProcAddress("glGetGraphicsResetStatus") orelse
+            gl.egl.getProcAddress("glGetGraphicsResetStatusARB");
+        self.get_graphics_reset_status = @ptrCast(proc);
+        if (proc == null) log.info("glGetGraphicsResetStatus unavailable", .{});
+    }
 }
 
 /// Callback called by renderer.Thread when it exits. Called on the render
@@ -243,10 +277,49 @@ pub fn drawFrameStart(self: *OpenGL) void {
 }
 
 /// Actions taken after `drawFrame` is done.
-///
-/// Right now there's nothing we need to do for OpenGL.
 pub fn drawFrameEnd(self: *OpenGL) void {
-    _ = self;
+    self.checkGpuReset();
+}
+
+/// Log once if the GPU reset this context. After a reset every GL call on
+/// the context is a no-op, so the surface stops updating; the log line
+/// (with a wall-clock time, since log lines carry none) makes that visible.
+fn checkGpuReset(self: *OpenGL) void {
+    if (self.gpu_reset_reported) return;
+    const getStatus = self.get_graphics_reset_status orelse return;
+    const status = getStatus();
+    if (status == gl.c.GL_NO_ERROR) return;
+    self.gpu_reset_reported = true;
+
+    const cause: []const u8 = switch (status) {
+        0x8253 => "guilty", // GL_GUILTY_CONTEXT_RESET
+        0x8254 => "innocent", // GL_INNOCENT_CONTEXT_RESET
+        0x8255 => "unknown", // GL_UNKNOWN_CONTEXT_RESET
+        else => "unrecognized",
+    };
+    var buf: [20]u8 = undefined;
+    log.err(
+        "GPU reset detected, this surface can no longer render cause={s} status=0x{x} time={s}",
+        .{ cause, status, formatUtcNow(&buf) },
+    );
+}
+
+/// The current time as `YYYY-MM-DDTHH:MM:SSZ`.
+fn formatUtcNow(buf: *[20]u8) []const u8 {
+    const now = std.Io.Timestamp.now(global.io(), .real).toSeconds();
+    const epoch = std.time.epoch;
+    const epoch_secs: epoch.EpochSeconds = .{ .secs = @intCast(@max(now, 0)) };
+    const year_day = epoch_secs.getEpochDay().calculateYearDay();
+    const month_day = year_day.calculateMonthDay();
+    const ds = epoch_secs.getDaySeconds();
+    return std.mem.print(buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}Z", .{
+        year_day.year,
+        month_day.month.numeric(),
+        month_day.day_index + 1,
+        ds.getHoursIntoDay(),
+        ds.getMinutesIntoHour(),
+        ds.getSecondsIntoMinute(),
+    }) catch "????-??-??T??:??:??Z";
 }
 
 pub fn initShaders(
