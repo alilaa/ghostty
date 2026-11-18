@@ -39,3 +39,8 @@ renderer_mailbox: *renderer.Thread.Mailbox,
 
 /// The mailbox for sending the surface messages.
 surface_mailbox: apprt.surface.Mailbox,
+
+/// A `terminal.snapshot` of a previous terminal to restore instead of
+/// starting blank, e.g. after an in-place restart. Only read during init.
+/// If it fails to decode we log and start with a blank terminal.
+restore_snapshot: ?[]const u8 = null,

@@ -9,6 +9,7 @@ zig build -Doptimize=fast -Dcpu=baseline -Dsimd=true \
     -fsys=zlib -fsys=oniguruma -fsys=gtk4-layer-shell -p "$prefix" -j2
 zig test src/apprt/gtk/control_request.zig
 zig test src/apprt/gtk/project_colors.zig
+zig test -lc src/apprt/gtk/restart.zig
 /usr/bin/python3 -m unittest discover -s contrib/ghosntty/tests -p 'test_*.py' -v
 GHOSTTY_TEST_BACKEND=v2 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua
 GHOSTTY_TEST_BACKEND=v3 nvim --headless -u NONE -l contrib/ghosntty/tests/test_adapter.lua

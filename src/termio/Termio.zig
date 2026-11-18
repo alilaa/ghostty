@@ -22,6 +22,7 @@ const windows = internal_os.windows;
 const configpkg = @import("../config.zig");
 const ProcessInfo = @import("../pty.zig").ProcessInfo;
 const compat_file = @import("../lib/compat/file.zig");
+const build_options = @import("terminal_options");
 
 const log = std.log.scoped(.io_exec);
 
@@ -269,8 +270,24 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         break :modes modes;
     };
 
-    // Create our terminal
-    var term = try terminalpkg.Terminal.init(global.io(), alloc, opts: {
+    // Restore a previous terminal if we were given one, otherwise create
+    // a blank one.
+    const restored: ?terminalpkg.Terminal = restored: {
+        const bytes = opts.restore_snapshot orelse break :restored null;
+        const grid_size = opts.size.grid();
+        break :restored restoreTerminal(alloc, global.io(), bytes, .{
+            .cols = grid_size.columns,
+            .rows = grid_size.rows,
+            .cell_size_px = .{
+                .width = opts.size.cell.width,
+                .height = opts.size.cell.height,
+            },
+        }, opts.config.image_storage_limit) catch |err| {
+            log.warn("failed to restore terminal snapshot, starting blank err={}", .{err});
+            break :restored null;
+        };
+    };
+    var term = if (restored) |t| t else try terminalpkg.Terminal.init(global.io(), alloc, opts: {
         const grid_size = opts.size.grid();
         break :opts .{
             .cols = grid_size.columns,
@@ -299,7 +316,12 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
 
     // The default palette may be an allocator-owned copy, so it is set
     // once the terminal owns its memory and can release it on deinit.
-    try term.colors.palette.changeDefault(alloc, opts.config.palette);
+    // A restored terminal keeps the palette state it was saved with.
+    if (restored == null) {
+        try term.colors.palette.changeDefault(alloc, opts.config.palette);
+    } else {
+        term.setKittyGraphicsLoadingLimits(.allWithTempDir(global.tmpDirPath()));
+    }
 
     // Setup our terminal size in pixels for certain requests.
     term.width_px = term.cols * opts.size.cell.width;
@@ -349,6 +371,33 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         }),
         .thread_enter_state = thread_enter_state,
     };
+}
+
+/// Decode a `terminal.snapshot` and fit it to the size we're starting with.
+/// The snapshot keeps every mode (including the kitty keyboard stack),
+/// both screens, scrollback and the cursor, so apps continue seamlessly.
+/// Decode a terminal snapshot written by a previous process (restart in
+/// place) and resize it to the new surface's grid.
+fn restoreTerminal(
+    alloc: Allocator,
+    io: std.Io,
+    bytes: []const u8,
+    size: terminalpkg.Terminal.Resize,
+    image_storage_limit: usize,
+) !terminalpkg.Terminal {
+    var reader: std.Io.Reader = .fixed(bytes);
+    var decoded = try terminalpkg.snapshot.decodeExact(alloc, io, &reader, .{
+        .max_continuation_bytes = 0,
+        .kitty_image_storage_limit = image_storage_limit,
+    });
+    defer decoded.deinit(alloc);
+    var term = decoded.toOwned();
+    errdefer term.deinit(alloc);
+
+    // Loading limits are a runtime policy, not part of the snapshot, and
+    // are set by the caller.
+    try term.resize(alloc, size);
+    return term;
 }
 
 pub fn deinit(self: *Termio) void {
@@ -856,4 +905,44 @@ pub const ThreadData = struct {
 /// not available on a particular platform.
 pub fn getProcessInfo(self: *Termio, comptime info: ProcessInfo) ?ProcessInfo.Type(info) {
     return self.backend.getProcessInfo(info);
+}
+
+test "restoreTerminal round-trips content and keyboard stack" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var t: terminalpkg.Terminal = try .init(testing.io, alloc, .{ .cols = 20, .rows = 5 });
+    defer t.deinit(alloc);
+    try t.printString("hello");
+    t.carriageReturn();
+    try t.linefeed();
+    try t.printString("world");
+    t.screens.active.kitty_keyboard.push(.{ .disambiguate = true });
+    t.screens.active.kitty_keyboard.push(.{ .disambiguate = true, .report_events = true });
+
+    var encoded: std.Io.Writer.Allocating = .init(alloc);
+    defer encoded.deinit();
+    try terminalpkg.snapshot.encode(alloc, &encoded.writer, &t, .{ .continuation = .ground });
+
+    var restored = try restoreTerminal(alloc, testing.io, encoded.written(), .{
+        .cols = 30,
+        .rows = 8,
+        .cell_size_px = .{ .width = 10, .height = 20 },
+    }, 1024 * 1024);
+    defer restored.deinit(alloc);
+
+    try testing.expectEqual(30, restored.cols);
+    try testing.expectEqual(8, restored.rows);
+    const str = try restored.plainString(alloc);
+    defer alloc.free(str);
+    try testing.expectEqualStrings("hello\nworld", str);
+    try testing.expect(std.meta.eql(
+        t.screens.active.kitty_keyboard,
+        restored.screens.active.kitty_keyboard,
+    ));
+
+    try testing.expectError(
+        error.EndOfStream,
+        restoreTerminal(alloc, testing.io, encoded.written()[0..4], .{ .cols = 1, .rows = 1 }, 0),
+    );
 }

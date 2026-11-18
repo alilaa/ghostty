@@ -9,6 +9,7 @@ const gobject = @import("gobject");
 const gtk = @import("gtk");
 
 const apprt = @import("../../../apprt.zig");
+const termio = @import("../../../termio.zig");
 const build_config = @import("../../../build_config.zig");
 const build_options = @import("build_options");
 const configpkg = @import("../../../config.zig");
@@ -778,6 +779,13 @@ pub const Surface = extern struct {
             pub const none: @This() = .{};
         } = .none,
 
+        /// State from an in-place restart, consumed by `initSurface`.
+        /// The snapshot is owned by the application allocator.
+        restore: ?struct {
+            adopt: ?termio.Exec.Adopt,
+            snapshot: ?[]u8,
+        } = null,
+
         pub var offset: c_int = 0;
     };
 
@@ -793,6 +801,52 @@ pub const Surface = extern struct {
             .working_directory = if (overrides.working_directory) |wd| alloc.dupeSentinel(u8, wd, 0) catch null else null,
         };
         return self;
+    }
+
+    /// Make this not yet initialized surface take over a running child and
+    /// terminal contents from before an in-place restart. Takes ownership
+    /// of `snapshot_bytes`, which must be allocated by the application allocator.
+    pub fn setRestoreState(
+        self: *Self,
+        adopt: ?termio.Exec.Adopt,
+        snapshot_bytes: ?[]u8,
+    ) void {
+        const priv = self.private();
+        assert(priv.core_surface == null);
+        self.clearRestoreState(false);
+        priv.restore = .{ .adopt = adopt, .snapshot = snapshot_bytes };
+    }
+
+    /// Request the initial font size of a not yet initialized surface.
+    pub fn setFontSizeRequest(self: *Self, points: f32) void {
+        const priv = self.private();
+        if (priv.font_size_request) |v| glib.ext.destroy(v);
+        const ptr = glib.ext.create(font.face.DesiredSize);
+        ptr.* = .{ .points = points };
+        priv.font_size_request = ptr;
+        self.as(gobject.Object).notifyByPspec(properties.@"font-size-request".impl.param_spec);
+    }
+
+    /// True once the surface's child process has exited.
+    pub fn getChildExited(self: *Self) bool {
+        return self.private().child_exited;
+    }
+
+    pub fn getRestoreState(self: *Self) ?apprt.surface.Restore {
+        const r = self.private().restore orelse return null;
+        return .{ .adopt = r.adopt, .snapshot = r.snapshot };
+    }
+
+    /// Free the restore state. If `close_fd` is set and the pty was never
+    /// adopted then the inherited master is closed, which hangs up the child.
+    fn clearRestoreState(self: *Self, close_fd: bool) void {
+        const priv = self.private();
+        const r = priv.restore orelse return;
+        if (r.snapshot) |v| Application.default().allocator().free(v);
+        if (close_fd) if (r.adopt) |a| {
+            _ = std.posix.system.close(a.fd);
+        };
+        priv.restore = null;
     }
 
     pub fn core(self: *Self) ?*CoreSurface {
@@ -2049,6 +2103,7 @@ pub const Surface = extern struct {
             c.deinit(alloc);
             priv.overrides.command = null;
         }
+        self.clearRestoreState(true);
         if (priv.overrides.working_directory) |wd| {
             alloc.free(wd);
             priv.overrides.working_directory = null;
@@ -2213,6 +2268,11 @@ pub const Surface = extern struct {
         priv.title = null;
         if (title) |v| priv.title = glib.ext.dupeZ(u8, v);
         self.as(gobject.Object).notifyByPspec(properties.title.impl.param_spec);
+    }
+
+    /// Returns the title-override property without a copy.
+    pub fn getTitleOverride(self: *Self) ?[:0]const u8 {
+        return self.private().title_override;
     }
 
     /// Overridden title. This will be generally be shown over the title
@@ -3713,6 +3773,10 @@ pub const Surface = extern struct {
             @round(content_scale.y * font.face.default_dpi),
             config.@"font-size",
         });
+
+        // Restore state is only valid for this init. Exec owns the
+        // adopted fd from here, even if init fails.
+        defer self.clearRestoreState(false);
 
         // Initialize the surface
         surface.init(

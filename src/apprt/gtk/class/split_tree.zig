@@ -605,6 +605,22 @@ pub const SplitTree = extern struct {
         return tree.zoomed != null;
     }
 
+    /// Show a tree rebuilt by an in-place restart, with `focused` as the
+    /// surface to focus when the tab is shown.
+    pub fn restoreTree(self: *Self, tree: *const Surface.Tree, focused: ?*Surface) void {
+        var it = tree.iterator();
+        while (it.next()) |entry| entry.view.bindIsSplit(self);
+        if (focused) |v| self.private().last_focused.set(v);
+        self.setTree(tree);
+    }
+
+    /// The handle of the last focused surface, if it is in the tree.
+    pub fn getLastFocusedHandle(self: *Self) ?Surface.Tree.Node.Handle {
+        const surface = self.private().last_focused.get() orelse return null;
+        defer surface.unref();
+        return self.getSurfaceHandle(surface);
+    }
+
     /// Get the tree data model that we're showing in this widget. This
     /// does not clone the tree.
     pub fn getTree(self: *Self) ?*Surface.Tree {

@@ -28,6 +28,8 @@ extension Ghostty {
             "toggle_window_decorations",
             "prompt_window_title",
             "show_gtk_inspector",
+            "restart_in_place",
+            "debug_simulate_gpu_reset",
         ]
 
         init(cValue: ghostty_command_s) {

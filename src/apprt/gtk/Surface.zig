@@ -114,6 +114,10 @@ pub fn setClipboard(
     );
 }
 
+pub fn restoreState(self: *Self) ?apprt.surface.Restore {
+    return self.surface.getRestoreState();
+}
+
 pub fn defaultTermioEnv(self: *Self) !std.process.Environ.Map {
     return try self.surface.defaultTermioEnv();
 }

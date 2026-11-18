@@ -653,6 +653,12 @@ pub fn init(
         .config_conditional_state = app.config_conditional_state,
     };
 
+    // State handed over by an in-place restart, if any.
+    const restore: apprt.surface.Restore = if (comptime @hasDecl(apprt.runtime.Surface, "restoreState"))
+        rt_surface.restoreState() orelse .{}
+    else
+        .{};
+
     // The command we're going to execute
     const command: ?configpkg.Command = command: {
         if (app.first) {
@@ -702,6 +708,7 @@ pub fn init(
             .term = config.term,
             .rt_pre_exec_info = .init(config),
             .rt_post_fork_info = .init(config),
+            .adopt = restore.adopt,
         });
         errdefer io_exec.deinit();
 
@@ -723,6 +730,7 @@ pub fn init(
             .renderer_wakeup = render_thread.wakeup,
             .renderer_mailbox = render_thread.mailbox,
             .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+            .restore_snapshot = restore.snapshot,
         });
     }
     // Outside the block, IO has now taken ownership of our temporary state
@@ -1159,6 +1167,14 @@ pub fn handleMessage(self: *Surface, msg: Message) !void {
         .redraw => self.redraw(),
 
         .renderer_health => |health| self.updateRendererHealth(health),
+
+        .gpu_reset => _ = self.rt_app.performAction(
+            .{ .surface = self },
+            .gpu_reset,
+            {},
+        ) catch |err| {
+            log.warn("failed to notify app of GPU reset err={}", .{err});
+        },
 
         .scrollbar => |scrollbar| self.updateScrollbar(scrollbar),
 

@@ -26,6 +26,8 @@ window-theme = ghostty
 scrollbar = never
 
 gtk-editor-control = true
+# Recover from WSL2 GPU (TDR) resets without losing shells or nvim.
+gpu-reset-action = restart
 gtk-project-tabs = true
 gtk-tabs-location = bottom
 gtk-wide-tabs = false

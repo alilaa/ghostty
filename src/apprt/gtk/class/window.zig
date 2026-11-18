@@ -501,6 +501,17 @@ pub const Window = extern struct {
             .end => tab_view.getNPages(),
         };
 
+        return self.insertTabPage(tab, position);
+    }
+
+    /// Append a tab rebuilt by an in-place restart and select it.
+    pub fn appendRestoredTab(self: *Self, tab: *Tab) *adw.TabPage {
+        return self.insertTabPage(tab, self.private().tab_view.getNPages());
+    }
+
+    fn insertTabPage(self: *Self, tab: *Tab, position: c_int) *adw.TabPage {
+        const tab_view = self.private().tab_view;
+
         // Add the page and select it
         const page = tab_view.insert(tab.as(gtk.Widget), position);
         tab_view.setSelectedPage(page);
@@ -1416,6 +1427,10 @@ pub const Window = extern struct {
             .native => false,
             .tabs => true,
         });
+    }
+
+    pub fn getTitleOverride(self: *Self) ?[:0]const u8 {
+        return self.private().title_override;
     }
 
     pub fn setTitleOverride(self: *Self, title: ?[]const u8) void {

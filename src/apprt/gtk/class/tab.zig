@@ -196,20 +196,8 @@ pub const Tab = extern struct {
     }
 
     pub fn new(config: ?*Config, overrides: Overrides) *Self {
-        const tab = gobject.ext.newInstance(Tab, .{});
-
+        const tab = newEmpty(config);
         const priv: *Private = tab.private();
-
-        if (config) |c| priv.config = c.ref();
-
-        // If our configuration is null then we get the configuration
-        // from the application.
-        if (priv.config == null) {
-            const app = Application.default();
-            priv.config = app.getConfig();
-        }
-
-        tab.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
 
         // Create our initial surface in the split tree.
         priv.split_tree.newSplit(.right, null, .{
@@ -226,6 +214,26 @@ pub const Tab = extern struct {
             },
         };
 
+        return tab;
+    }
+
+    /// Create a tab without any surface. The caller must give it a tree
+    /// (see `SplitTree.restoreTree`) before it is shown.
+    pub fn newEmpty(config: ?*Config) *Self {
+        const tab = gobject.ext.newInstance(Tab, .{});
+
+        const priv: *Private = tab.private();
+
+        if (config) |c| priv.config = c.ref();
+
+        // If our configuration is null then we get the configuration
+        // from the application.
+        if (priv.config == null) {
+            const app = Application.default();
+            priv.config = app.getConfig();
+        }
+
+        tab.as(gobject.Object).notifyByPspec(properties.config.impl.param_spec);
         return tab;
     }
 
@@ -257,6 +265,15 @@ pub const Tab = extern struct {
     /// Stable identity before display decorations such as bell/zoom markers.
     pub fn getTitleOverride(self: *Self) ?[:0]const u8 {
         return self.private().title_override;
+    }
+
+    /// The tab's Codex color if one was already chosen.
+    pub fn peekCodexColor(self: *Self) ?u24 {
+        return self.private().codex_color;
+    }
+
+    pub fn setCodexColor(self: *Self, color: u24) void {
+        self.private().codex_color = color;
     }
 
     pub fn getCodexColor(self: *Self) u24 {

@@ -3767,6 +3767,25 @@ else
 /// surfaces.
 @"linux-cgroup-hard-fail": bool = false,
 
+/// What to do when a terminal's GPU context is reset (for example after a
+/// driver timeout on WSL2), which leaves it unable to draw:
+///
+/// * `log` - Only log the reset. Affected terminals stop updating until
+///   Ghostty is restarted.
+///
+/// * `restart` - Restart Ghostty in place, as the `restart_in_place`
+///   keybind action does: the process re-executes itself, keeping every
+///   terminal's shell and programs running, and rebuilds its windows, tabs
+///   and splits. Resets reported by several terminals are coalesced into
+///   one restart after a short delay. If more than three automatic restarts
+///   happen within 60 seconds, further resets are only logged.
+///
+/// Only implemented on Linux (GTK). `restart` is not supported under
+/// Flatpak, where it behaves like `log`.
+///
+/// The default value is `log`.
+@"gpu-reset-action": GpuResetAction = .log,
+
 /// Enable or disable GTK's OpenGL debugging logs. The default is `true` for
 /// debug builds, `false` for all others.
 ///
@@ -9950,6 +9969,12 @@ pub const LinuxCgroup = enum {
     never,
     always,
     @"single-instance",
+};
+
+/// See gpu-reset-action
+pub const GpuResetAction = enum {
+    log,
+    restart,
 };
 
 /// See async-backend

@@ -61,6 +61,10 @@ get_graphics_reset_status: ?*const fn () callconv(.c) gl.c.GLenum = null,
 /// Whether a GPU reset has already been reported for this context.
 gpu_reset_reported: bool = false,
 
+/// Set once a GPU reset is detected, until the renderer reports it to the
+/// surface via `takeGpuReset`.
+gpu_reset_pending: bool = false,
+
 pub fn init(
     alloc: Allocator,
     device: *const Device,
@@ -290,6 +294,7 @@ fn checkGpuReset(self: *OpenGL) void {
     const status = getStatus();
     if (status == gl.c.GL_NO_ERROR) return;
     self.gpu_reset_reported = true;
+    self.gpu_reset_pending = true;
 
     const cause: []const u8 = switch (status) {
         0x8253 => "guilty", // GL_GUILTY_CONTEXT_RESET
@@ -302,6 +307,12 @@ fn checkGpuReset(self: *OpenGL) void {
         "GPU reset detected, this surface can no longer render cause={s} status=0x{x} time={s}",
         .{ cause, status, formatUtcNow(&buf) },
     );
+}
+
+/// Returns true exactly once after a GPU reset was detected.
+pub fn takeGpuReset(self: *OpenGL) bool {
+    defer self.gpu_reset_pending = false;
+    return self.gpu_reset_pending;
 }
 
 /// The current time as `YYYY-MM-DDTHH:MM:SSZ`.

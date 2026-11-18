@@ -56,6 +56,29 @@ pub fn init(
     return .{ .subprocess = subprocess };
 }
 
+/// A running child and its pty master inherited across an in-place
+/// restart (execve of ourselves). See `Config.adopt`.
+pub const Adopt = struct {
+    fd: posix.fd_t,
+    pid: posix.pid_t,
+};
+
+/// The pty master and child pid that must survive an in-place restart, or
+/// null if there is no live child to hand over. The caller must hold the
+/// renderer state mutex so the IO thread isn't concurrently tearing down.
+pub fn adoptHandle(self: *const Exec) ?Adopt {
+    if (comptime builtin.target.os.tag == .windows) return null;
+    const pty = self.subprocess.pty orelse return null;
+    const process = self.subprocess.process orelse return null;
+    return switch (process) {
+        .fork_exec => |cmd| .{
+            .fd = pty.master,
+            .pid = cmd.pid orelse return null,
+        },
+        .flatpak => null,
+    };
+}
+
 pub fn deinit(self: *Exec) void {
     self.subprocess.deinit();
 }
@@ -582,6 +605,11 @@ pub const Config = struct {
 
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
+
+    /// Take over an existing pty master and child instead of spawning one.
+    /// The command and env still matter: they are used to spawn a fresh
+    /// process if the adopted one turns out to be invalid.
+    adopt: ?Adopt = null,
 };
 
 const Subprocess = struct {
@@ -595,6 +623,7 @@ const Subprocess = struct {
     screen_size: renderer.ScreenSize,
     pty: ?Pty = null,
     process: ?Process = null,
+    adopt: ?Adopt = null,
 
     rt_pre_exec_info: Command.RtPreExecInfo,
     rt_post_fork_info: Command.RtPostForkInfo,
@@ -876,6 +905,7 @@ const Subprocess = struct {
 
             .rt_pre_exec_info = cfg.rt_pre_exec_info,
             .rt_post_fork_info = cfg.rt_post_fork_info,
+            .adopt = cfg.adopt,
 
             // Should be initialized with initTerminal call.
             .grid_size = .{},
@@ -899,6 +929,20 @@ const Subprocess = struct {
         write: Pty.Fd,
     } {
         assert(self.pty == null and self.process == null);
+
+        if (comptime @hasDecl(Pty, "adopt")) {
+            if (self.adopt) |adopt| {
+                self.adopt = null;
+                if (self.startAdopted(adopt)) |fds| {
+                    return .{ .read = fds, .write = fds };
+                } else |err| {
+                    log.warn(
+                        "cannot adopt pty fd={} pid={}, starting a new process err={}",
+                        .{ adopt.fd, adopt.pid, err },
+                    );
+                }
+            }
+        }
 
         // This function is funny because on POSIX systems it can
         // fail in the forked process. This is flipped to true if
@@ -1092,6 +1136,55 @@ const Subprocess = struct {
                 .write = pty.master,
             },
         };
+    }
+
+    /// Take over a pty master and child inherited across execve. On success
+    /// the child gets a SIGWINCH so full-screen programs redraw into our
+    /// restored (but possibly slightly stale) screen.
+    fn startAdopted(self: *Subprocess, adopt: Adopt) !Pty.Fd {
+        var pty = try Pty.adopt(adopt.fd);
+        errdefer pty.deinit();
+
+        // A zombie that exited during the restart still counts as alive here;
+        // the pidfd watcher then reports the exit immediately.
+        if (adopt.pid <= 0) return error.InvalidPid;
+        if (posix.errno(posix.system.kill(adopt.pid, @fromBackingInt(@intCast(0)))) != .SUCCESS)
+            return error.ProcessGone;
+
+        const fd = pty.master;
+        self.pty = pty;
+        errdefer self.pty = null;
+
+        // Nudge the size so the kernel sends SIGWINCH even when the final
+        // size is unchanged. The real size is set last.
+        const real: ptypkg.winsize = .{
+            .ws_row = std.math.cast(u16, self.grid_size.rows) orelse std.math.maxInt(u16),
+            .ws_col = std.math.cast(u16, self.grid_size.columns) orelse std.math.maxInt(u16),
+            .ws_xpixel = std.math.cast(u16, self.screen_size.width) orelse std.math.maxInt(u16),
+            .ws_ypixel = std.math.cast(u16, self.screen_size.height) orelse std.math.maxInt(u16),
+        };
+        var nudge = real;
+        if (nudge.ws_row > 1) nudge.ws_row -= 1 else nudge.ws_row += 1;
+        self.pty.?.setSize(nudge) catch |err| log.warn("adopted pty size nudge failed err={}", .{err});
+        try self.pty.?.setSize(real);
+
+        self.process = .{ .fork_exec = .{
+            .path = self.args[0],
+            .args = self.args,
+            .os_pre_exec = null,
+            .rt_pre_exec = null,
+            .rt_pre_exec_info = self.rt_pre_exec_info,
+            .rt_post_fork = null,
+            .rt_post_fork_info = self.rt_post_fork_info,
+            .pid = adopt.pid,
+        } };
+        if (self.env) |*env| {
+            env.deinit();
+            self.env = null;
+        }
+
+        log.info("adopted existing pty fd={} pid={}", .{ fd, adopt.pid });
+        return fd;
     }
 
     /// This should be called after fork but before exec in the child process.

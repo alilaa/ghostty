@@ -364,6 +364,16 @@ pub const Action = union(Key) {
     /// split or the window is fullscreen.
     resize_window: ResizeWindow,
 
+    /// Re-exec the application in place, keeping the PTYs and children of
+    /// every surface alive and rebuilding windows, tabs and splits in the
+    /// new process. Only implemented on GTK (Linux).
+    restart_in_place,
+
+    /// The renderer of the target surface lost its GPU context (for
+    /// example after a driver reset) and can no longer draw. The apprt
+    /// decides what to do (see `gpu-reset-action`).
+    gpu_reset,
+
     /// Sync with: ghostty_action_tag_e
     pub const Key = enum(c_int) {
         quit,
@@ -436,6 +446,8 @@ pub const Action = union(Key) {
         copy_title_to_clipboard,
         move_tab_to_new_window,
         resize_window,
+        restart_in_place,
+        gpu_reset,
 
         test "ghostty.h Action.Key" {
             try lib.checkGhosttyHEnum(Key, "GHOSTTY_ACTION_");

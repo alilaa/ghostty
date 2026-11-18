@@ -9,6 +9,18 @@ const renderer = @import("../renderer.zig");
 const terminal = @import("../terminal/main.zig");
 const Config = @import("../config.zig").Config;
 const MessageData = @import("../datastruct/main.zig").MessageData;
+const termio = @import("../termio.zig");
+
+/// State carried over from a previous process by an in-place restart.
+/// Apprts that support it expose `restoreState() ?Restore` on their surface;
+/// the memory only needs to live until core surface init returns.
+pub const Restore = struct {
+    /// The running child and pty master to take over.
+    adopt: ?termio.Exec.Adopt = null,
+
+    /// A `terminal.snapshot` of the screens, scrollback and modes.
+    snapshot: ?[]const u8 = null,
+};
 
 /// The message types that can be sent to a single surface.
 pub const Message = union(enum) {
@@ -111,6 +123,10 @@ pub const Message = union(enum) {
 
     /// Health status change for the renderer.
     renderer_health: renderer.Health,
+
+    /// The renderer lost its GPU context (driver reset) and can no longer
+    /// draw. Sent at most once per renderer.
+    gpu_reset: void,
 
     /// Tell the surface to present itself to the user. This may require raising
     /// a window and switching tabs.

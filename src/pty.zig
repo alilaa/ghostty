@@ -186,6 +186,32 @@ const PosixPty = struct {
         };
     }
 
+    pub const AdoptError = error{ InvalidFd, NotPtyMaster };
+
+    /// Wrap an already open pty master, e.g. one inherited across execve.
+    /// The slave is not known, so `slave` is -1 and must not be used.
+    /// On success the master is marked CLOEXEC again.
+    pub fn adopt(master_fd: Fd) AdoptError!Pty {
+        const flags = posix.system.fcntl(master_fd, posix.F.GETFD);
+        if (flags == -1) return error.InvalidFd;
+
+        // Only a pty master has a slave name, which also guarantees that we
+        // never take over an unrelated descriptor.
+        var result: Pty = .{ .master = master_fd, .slave = -1 };
+        switch (comptime builtin.target.os.tag) {
+            .linux, .freebsd => {
+                // tty_name is left null (computed lazily) because it would
+                // point into this local copy's buffer.
+                if (c.ptsname_r(master_fd, &result.tty_name_buf, result.tty_name_buf.len) != 0)
+                    return error.NotPtyMaster;
+            },
+            else => if (c.isatty(master_fd) == 0) return error.NotPtyMaster,
+        }
+
+        _ = posix.system.fcntl(master_fd, posix.F.SETFD, flags | posix.FD_CLOEXEC);
+        return result;
+    }
+
     pub fn deinit(self: *Pty) void {
         _ = posix.system.close(self.master);
         self.* = undefined;
@@ -517,4 +543,37 @@ test {
         .macos => try testing.expect(std.mem.startsWith(u8, pty.getProcessInfo(.tty_name).?, "/dev/")),
         else => try testing.expect(pty.getProcessInfo(.tty_name) == null),
     }
+}
+
+test "Pty.adopt" {
+    if (comptime !@hasDecl(Pty, "adopt")) return error.SkipZigTest;
+    const testing = std.testing;
+    const ws: winsize = .{ .ws_row = 24, .ws_col = 80, .ws_xpixel = 1, .ws_ypixel = 1 };
+
+    var pty = try Pty.open(ws);
+    defer pty.deinit();
+
+    const dup_fd = posix.system.dup(pty.master);
+    try testing.expect(dup_fd >= 0);
+    var adopted = Pty.adopt(dup_fd) catch |err| {
+        _ = posix.system.close(dup_fd);
+        return err;
+    };
+    defer adopted.deinit();
+
+    try testing.expectEqual(ws, try adopted.getSize());
+    try testing.expect(posix.system.fcntl(dup_fd, posix.F.GETFD) & posix.FD_CLOEXEC != 0);
+    switch (comptime builtin.target.os.tag) {
+        .linux => try testing.expectEqualStrings(
+            pty.getProcessInfo(.tty_name).?,
+            adopted.getProcessInfo(.tty_name).?,
+        ),
+        else => {},
+    }
+
+    // A slave or closed descriptor must never be adopted as a master.
+    if (comptime builtin.target.os.tag == .linux) {
+        try testing.expectError(error.NotPtyMaster, Pty.adopt(pty.slave));
+    }
+    try testing.expectError(error.InvalidFd, Pty.adopt(std.math.maxInt(i32)));
 }

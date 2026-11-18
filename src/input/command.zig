@@ -576,6 +576,18 @@ fn actionCommands(action: Action.Key) []const Command {
             .description = i18n.N_("Show the GTK inspector."),
         }},
 
+        .restart_in_place => comptime &.{.{
+            .action = .restart_in_place,
+            .title = i18n.N_("Restart in Place"),
+            .description = i18n.N_("Restart the application, keeping every terminal and its programs running."),
+        }},
+
+        .debug_simulate_gpu_reset => comptime &.{.{
+            .action = .debug_simulate_gpu_reset,
+            .title = i18n.N_("Simulate GPU Reset"),
+            .description = i18n.N_("Run the GPU reset recovery path without a real GPU reset."),
+        }},
+
         .show_on_screen_keyboard => comptime &.{.{
             .action = .show_on_screen_keyboard,
             .title = i18n.N_("Show On-Screen Keyboard"),

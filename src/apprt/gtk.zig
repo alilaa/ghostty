@@ -18,4 +18,5 @@ test {
     _ = @import("gtk/scale.zig");
     _ = @import("gtk/control_request.zig");
     _ = @import("gtk/project_colors.zig");
+    _ = @import("gtk/restart.zig");
 }

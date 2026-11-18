@@ -1775,7 +1775,14 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // Let our graphics API do any bookkeeping, etc.
             // that it needs to do before / after `drawFrame`.
             self.api.drawFrameStart();
-            defer self.api.drawFrameEnd();
+            defer {
+                self.api.drawFrameEnd();
+                if (comptime @hasDecl(GraphicsAPI, "takeGpuReset")) {
+                    if (self.api.takeGpuReset()) {
+                        _ = self.surface_mailbox.push(.gpu_reset, .{ .forever = {} });
+                    }
+                }
+            }
 
             // Retrieve the most up-to-date surface size from the Graphics API
             const surface_size = try self.api.surfaceSize();

@@ -50,6 +50,8 @@ const Overrides = @import("Overrides.zig");
 
 const log = std.log.scoped(.gtk_ghostty_application);
 const editor_control = @import("../editor_control.zig");
+const restart = @import("../restart.zig");
+const restart_in_place = @import("../restart_in_place.zig");
 
 extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
 
@@ -239,6 +241,17 @@ pub const Application = extern struct {
         // unref'd on dispose. See ringBell and media.zig.
         bell_media: ?*gtk.MediaFile = null,
 
+        /// State from before an in-place restart, consumed on activation.
+        restore: ?std.json.Parsed(restart.Snapshot) = null,
+
+        /// Loop guard for automatic restarts after a GPU reset.
+        restart_counter: restart.Counter = .{},
+
+        /// Pending debounced restart: glib source id and whether it was
+        /// triggered automatically.
+        restart_timer: c_uint = 0,
+        restart_auto: bool = false,
+
         pub var offset: c_int = 0;
     };
 
@@ -266,6 +279,10 @@ pub const Application = extern struct {
         core_app: *CoreApp,
     ) (error{ GtkMinimumVersion, AdwaitaMinimumVersion } || Allocator.Error)!*Self {
         const alloc = core_app.alloc;
+
+        // Must run before anything spawns children or reads the environment.
+        const restore = restart_in_place.load(alloc);
+        errdefer if (restore.snapshot) |v| v.deinit();
 
         // Capture GLib/GObject/GTK log messages and funnel them through Zig's
         // logging system rather than just getting dumped directly to stderr.
@@ -335,13 +352,6 @@ pub const Application = extern struct {
             .detect => unreachable,
         };
 
-        // Setup the flags for our application.
-        const app_flags: gio.ApplicationFlags = app_flags: {
-            var flags: gio.ApplicationFlags = .flags_default_flags;
-            if (!single_instance) flags.non_unique = true;
-            break :app_flags flags;
-        };
-
         // Our app ID determines uniqueness and maps to our desktop file.
         // We append "-debug" to the ID if we're in debug mode so that we
         // can develop Ghostty in Ghostty.
@@ -355,6 +365,23 @@ pub const Application = extern struct {
             }
 
             break :app_id build_info.application_id;
+        };
+
+        // Setup the flags for our application.
+        const app_flags: gio.ApplicationFlags = app_flags: {
+            var flags: gio.ApplicationFlags = .flags_default_flags;
+            if (!single_instance) flags.non_unique = true;
+            // After an in-place restart the bus may not have released our
+            // previous instance's name yet. Registering then would forward
+            // activation to that dead instance, so wait for the name and
+            // run unregistered if it doesn't free up.
+            if (single_instance and restore.snapshot != null and
+                !restart_in_place.waitForBusName(app_id))
+            {
+                log.warn("previous instance still owns the bus name, running non-unique", .{});
+                flags.non_unique = true;
+            }
+            break :app_flags flags;
         };
 
         glib.setApplicationName(build_info.display_name);
@@ -427,6 +454,8 @@ pub const Application = extern struct {
             .global_shortcuts = gobject.ext.newInstance(GlobalShortcuts, .{}),
             .saved_language = saved_language,
             .open_uri = .init(rt_app),
+            .restore = restore.snapshot,
+            .restart_counter = restore.counter,
         };
 
         // Signals
@@ -465,6 +494,7 @@ pub const Application = extern struct {
         priv.open_uri.deinit();
         priv.global_shortcuts.unref();
         if (priv.saved_language) |language| alloc.free(language);
+        if (priv.restore) |v| v.deinit();
         if (gdk.Display.getDefault()) |display| {
             gtk.StyleContext.removeProviderForDisplay(
                 display,
@@ -555,7 +585,8 @@ pub const Application = extern struct {
             // We need to scope any config access because once we run our
             // event loop, this can change out from underneath us.
             const config = priv.config.get();
-            if (config.@"initial-window") self.as(gio.Application).activate();
+            if (config.@"initial-window" or priv.restore != null)
+                self.as(gio.Application).activate();
         }
 
         // If we are NOT the primary instance, then we never want to run.
@@ -809,6 +840,9 @@ pub const Application = extern struct {
             .command_finished => return Action.commandFinished(target, value),
             .readonly => return Action.setReadonly(target, value),
 
+            .restart_in_place => return self.scheduleRestart(false),
+            .gpu_reset => return self.gpuReset(),
+
             .start_search => Action.startSearch(target, value),
             .end_search => Action.endSearch(target),
             .search_total => Action.searchTotal(target, value),
@@ -836,6 +870,61 @@ pub const Application = extern struct {
         // Assume it was handled. The unhandled case must be explicit
         // in the switch above.
         return true;
+    }
+
+    fn gpuReset(self: *Self) bool {
+        const config = self.private().config.get();
+        switch (config.@"gpu-reset-action") {
+            .log => {
+                log.warn("GPU reset detected; set gpu-reset-action = restart to recover automatically", .{});
+                return false;
+            },
+            .restart => return self.scheduleRestart(true),
+        }
+    }
+
+    /// Restart in place after a short delay, which coalesces the GPU reset
+    /// reports of every surface and lets the current key event finish.
+    fn scheduleRestart(self: *Self, auto: bool) bool {
+        if (!restart_in_place.supported()) {
+            log.warn("restart in place is not supported here", .{});
+            return false;
+        }
+        const priv = self.private();
+        if (priv.restart_timer != 0) return true;
+        priv.restart_auto = auto;
+        priv.restart_timer = glib.timeoutAdd(
+            if (auto) 1500 else 50,
+            restartTimer,
+            self,
+        );
+        return true;
+    }
+
+    fn restartTimer(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+        const priv = self.private();
+        priv.restart_timer = 0;
+
+        var opts: restart_in_place.ExecOptions = .{};
+        if (priv.restart_auto) {
+            const now = std.Io.Clock.real.now(global.io()).toSeconds();
+            opts.counter = priv.restart_counter.next(now) orelse {
+                log.err(
+                    "not restarting after GPU reset: {} restarts within {}s",
+                    .{ restart.guard_max, restart.guard_window_s },
+                );
+                return 0;
+            };
+        }
+        if (priv.config.get().language != null) {
+            opts.original_lang = .{ .value = priv.saved_language };
+        }
+
+        restart_in_place.restartInPlace(self, opts) catch |err| {
+            log.err("restart in place failed err={}", .{err});
+        };
+        return 0;
     }
 
     /// Returns the core app associated with this application. This is
@@ -1482,6 +1571,7 @@ pub const Application = extern struct {
             .init("reload-config", actionReloadConfig, null),
             .init("toggle-quick-terminal", actionToggleQuickTerminal, null),
             .init("ring-bell", actionRingBell, null),
+            .init("restart-in-place", actionRestartInPlace, null),
         };
 
         ext.actions.add(Self, self, &actions);
@@ -1526,8 +1616,21 @@ pub const Application = extern struct {
     fn activate(self: *Self) callconv(.c) void {
         log.debug("activate", .{});
 
-        // Queue a new window
         const priv = self.private();
+        if (priv.restore) |parsed| {
+            priv.restore = null;
+            defer parsed.deinit();
+            if (restart_in_place.restore(self, &parsed.value) > 0) {
+                priv.requested_window = true;
+                gio.Application.virtual_methods.activate.call(
+                    Class.parent,
+                    self.as(Parent),
+                );
+                return;
+            }
+        }
+
+        // Queue a new window
         _ = priv.core_app.mailbox.push(global.io(), .{
             .new_window = .{},
         }, .{ .forever = {} });
@@ -1787,6 +1890,14 @@ pub const Application = extern struct {
         priv.core_app.performAction(self.rt(), .reload_config) catch |err| {
             log.warn("error reloading config err={}", .{err});
         };
+    }
+
+    fn actionRestartInPlace(
+        _: *gio.SimpleAction,
+        _: ?*glib.Variant,
+        self: *Self,
+    ) callconv(.c) void {
+        _ = self.scheduleRestart(false);
     }
 
     fn actionToggleQuickTerminal(

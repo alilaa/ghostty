@@ -703,6 +703,30 @@ pub const Action = union(enum) {
     /// Has no effect on macOS.
     show_gtk_inspector,
 
+    /// Restart Ghostty in place without closing any terminals.
+    ///
+    /// The process re-executes itself, keeping its PID and the terminal
+    /// (PTY) connections of every surface, so shells and programs such as
+    /// nvim keep running. Windows, tabs, splits, titles and scrollback are
+    /// rebuilt in the new process and programs are sent a resize signal
+    /// (SIGWINCH) so they redraw.
+    ///
+    /// Known limitations: output that was written by a program but not yet
+    /// processed at the moment of the restart may be lost. The quick
+    /// terminal is not restored.
+    ///
+    /// Only implemented on Linux (GTK) and not supported under Flatpak.
+    /// Also available to scripts as the `restart-in-place` GApplication
+    /// action over D-Bus.
+    restart_in_place,
+
+    /// Behave as if the GPU had been reset, running the same path as an
+    /// automatically detected GPU reset (see `gpu-reset-action`). Useful to
+    /// test recovery without a real driver reset.
+    ///
+    /// Only implemented on Linux (GTK).
+    debug_simulate_gpu_reset,
+
     /// Show the on-screen keyboard if one is present.
     ///
     /// Only implemented on Linux (GTK). On GNOME, the "Screen Keyboard"
@@ -1377,6 +1401,8 @@ pub const Action = union(enum) {
             .toggle_visibility,
             .check_for_updates,
             .show_gtk_inspector,
+            .restart_in_place,
+            .debug_simulate_gpu_reset,
             => .app,
 
             // These are app but can be special-cased in a surface context.

@@ -125,6 +125,57 @@ pub fn SplitTree(comptime V: type) type {
             };
         }
 
+        pub const FromNodesError = Allocator.Error || error{InvalidTree};
+
+        /// Build a tree from a raw node array such as one previously saved
+        /// from `nodes`. Index 0 is the root. Every node must be reachable
+        /// from the root exactly once, so cycles, shared or orphaned nodes
+        /// are rejected. Leaf views are referenced as with `init`.
+        pub fn fromNodes(
+            gpa: Allocator,
+            nodes: []const Node,
+            zoomed: ?Node.Handle,
+        ) FromNodesError!Self {
+            if (nodes.len == 0) return .empty;
+            if (nodes.len >= std.math.maxInt(Node.Handle.Backing)) return error.InvalidTree;
+            if (zoomed) |z| if (z.idx() >= nodes.len) return error.InvalidTree;
+
+            // Walk from the root, marking each node as we see it.
+            const seen = try gpa.alloc(bool, nodes.len);
+            defer gpa.free(seen);
+            @memset(seen, false);
+            var stack: std.ArrayList(Node.Handle) = .empty;
+            defer stack.deinit(gpa);
+            try stack.append(gpa, .root);
+            var count: usize = 0;
+            while (stack.pop()) |handle| {
+                const i = handle.idx();
+                if (i >= nodes.len or seen[i]) return error.InvalidTree;
+                seen[i] = true;
+                count += 1;
+                switch (nodes[i]) {
+                    .leaf => {},
+                    .split => |s| {
+                        if (!std.math.isFinite(s.ratio) or s.ratio < 0 or s.ratio > 1)
+                            return error.InvalidTree;
+                        try stack.append(gpa, s.left);
+                        try stack.append(gpa, s.right);
+                    },
+                }
+            }
+            if (count != nodes.len) return error.InvalidTree;
+
+            var arena = ArenaAllocator.init(gpa);
+            errdefer arena.deinit();
+            const owned = try arena.allocator().dupe(Node, nodes);
+            try refNodes(gpa, owned);
+            return .{
+                .arena = arena,
+                .nodes = owned,
+                .zoomed = zoomed,
+            };
+        }
+
         pub fn deinit(self: *Self) void {
             // Important: only free memory if we have memory to free,
             // because we use an undefined arena for empty trees.
@@ -1391,6 +1442,82 @@ const TestView = struct {
         return self.label;
     }
 };
+
+test "SplitTree: fromNodes round-trips a saved node array" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    var v1: TestTree.View = .{ .label = "A" };
+    var t1: TestTree = try .init(alloc, &v1);
+    defer t1.deinit();
+    var v2: TestTree.View = .{ .label = "B" };
+    var t2: TestTree = try .init(alloc, &v2);
+    defer t2.deinit();
+    var v3: TestTree.View = .{ .label = "C" };
+    var t3: TestTree = try .init(alloc, &v3);
+    defer t3.deinit();
+
+    var t12 = try t1.split(alloc, .root, .right, 0.3, &t2);
+    defer t12.deinit();
+    const b: TestTree.Node.Handle = b: {
+        var it = t12.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.eql(u8, entry.view.label, "B")) break :b entry.handle;
+        }
+        return error.TestUnexpectedResult;
+    };
+    var t123 = try t12.split(alloc, b, .down, 0.5, &t3);
+    defer t123.deinit();
+    t123.zoomed = .root;
+
+    var rebuilt: TestTree = try .fromNodes(alloc, t123.nodes, t123.zoomed);
+    defer rebuilt.deinit();
+    try testing.expectEqual(t123.nodes.len, rebuilt.nodes.len);
+    try testing.expectEqual(t123.zoomed, rebuilt.zoomed);
+
+    const expected = try std.fmt.allocPrint(alloc, "{f}", .{t123});
+    defer alloc.free(expected);
+    const actual = try std.fmt.allocPrint(alloc, "{f}", .{rebuilt});
+    defer alloc.free(actual);
+    try testing.expectEqualStrings(expected, actual);
+}
+
+test "SplitTree: fromNodes rejects malformed trees" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+    var v: TestTree.View = .{ .label = "A" };
+    const leaf: TestTree.Node = .{ .leaf = &v };
+    const split = struct {
+        fn f(left: u16, right: u16, ratio: f16) TestTree.Node {
+            return .{ .split = .{
+                .layout = .horizontal,
+                .ratio = ratio,
+                .left = @fromBackingInt(@intCast(left)),
+                .right = @fromBackingInt(@intCast(right)),
+            } };
+        }
+    }.f;
+
+    // Out of bounds, cycle, shared child, orphan, bad ratio, bad zoom.
+    const cases = [_][]const TestTree.Node{
+        &.{ split(1, 5, 0.5), leaf },
+        &.{ split(1, 0, 0.5), leaf },
+        &.{ split(1, 1, 0.5), leaf },
+        &.{ leaf, leaf },
+        &.{ split(1, 2, 1.5), leaf, leaf },
+    };
+    for (cases) |nodes| {
+        try testing.expectError(error.InvalidTree, TestTree.fromNodes(alloc, nodes, null));
+    }
+    try testing.expectError(
+        error.InvalidTree,
+        TestTree.fromNodes(alloc, &.{leaf}, @fromBackingInt(@intCast(1))),
+    );
+
+    var empty: TestTree = try .fromNodes(alloc, &.{}, null);
+    try testing.expect(empty.isEmpty());
+    empty.deinit();
+}
 
 test "SplitTree: isSplit" {
     const testing = std.testing;
