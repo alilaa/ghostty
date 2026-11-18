@@ -37,6 +37,9 @@ pub const ExecOptions = struct {
     /// Loop guard state to pass to the new process.
     counter: restart.Counter = .{},
 
+    /// Restarting to recover from a GPU reset.
+    gpu_reset: bool = false,
+
     /// Set if startup overrode LANG from the config: the value it had
     /// originally (null if unset), so the new process sees the same input.
     original_lang: ?struct { value: ?[:0]const u8 } = null,
@@ -55,7 +58,8 @@ pub fn restartInPlace(app: *Application, opts: ExecOptions) !void {
     // the IO threads stop consuming PTY output that the snapshot would miss.
     var capture: Capture = .{ .alloc = alloc };
     defer capture.unlockAll();
-    const snapshot = try capture.run(app);
+    var snapshot = try capture.run(app);
+    snapshot.gpu_reset = opts.gpu_reset;
 
     const dir = try restart.defaultDir(
         alloc,
@@ -351,6 +355,9 @@ pub fn restore(app: *Application, snapshot: *const restart.Snapshot) usize {
     while (idx > 0) {
         idx -= 1;
         windows.items[idx].as(gtk.Window).present();
+    }
+    if (snapshot.gpu_reset and windows.items.len > 0) {
+        windows.items[0].notifyGpuResetRecovered();
     }
     log.info("restored windows={} surfaces={}", .{ windows.items.len, snapshot.surfaces.len });
     return windows.items.len;

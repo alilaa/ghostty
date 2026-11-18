@@ -13,10 +13,12 @@ const configpkg = @import("../config.zig");
 const rendererpkg = @import("../renderer.zig");
 const Renderer = rendererpkg.GenericRenderer(OpenGL);
 const Dmabuf = @import("Dmabuf.zig");
+const xev = global.xev;
 pub const Device = @import("opengl/Device.zig");
 
 pub const GraphicsAPI = OpenGL;
 pub const Target = @import("opengl/Target.zig");
+const ExportPool = @import("export_pool.zig").ExportPool(Target.Export);
 pub const Frame = @import("opengl/Frame.zig");
 pub const RenderPass = @import("opengl/RenderPass.zig");
 pub const Pipeline = @import("opengl/Pipeline.zig");
@@ -64,6 +66,17 @@ gpu_reset_reported: bool = false,
 /// Set once a GPU reset is detected, until the renderer reports it to the
 /// surface via `takeGpuReset`.
 gpu_reset_pending: bool = false,
+
+/// Whether the GL implementation rasterizes on the CPU (e.g. llvmpipe).
+/// Set on the render thread, read by the apprt.
+software_renderer: std.atomic.Value(bool) = .init(false),
+
+/// Textures we export frames through. Render thread only.
+export_pool: ExportPool,
+
+/// How many frames fell back to CPU presentation because every
+/// export texture was still held by the apprt.
+export_starved_count: u64 = 0,
 
 pub fn init(
     alloc: Allocator,
@@ -117,10 +130,14 @@ pub fn init(
         .device = device,
         .egl_context = context,
         .robust = robust,
+        .export_pool = .init(alloc),
     };
 }
 
 pub fn deinit(self: *OpenGL) void {
+    // GL objects are freed on the render thread by `releaseExportPool`.
+    std.debug.assert(self.export_pool.slots.items.len == 0);
+    self.export_pool.deinit();
     self.device.display.releaseCurrent();
     self.egl_context.destroy(self.device.display) catch {};
     self.* = undefined;
@@ -235,6 +252,13 @@ pub fn threadEnter(self: *OpenGL, surface: *apprt.Surface) !void {
     // Load our function pointers for this thread's threadlocal.
     try prepareContext(&gl.egl.getProcAddress);
 
+    if (gl.glad.context.GetString.?(gl.c.GL_RENDERER)) |ptr| {
+        const name = std.mem.span(@as([*:0]const u8, @ptrCast(ptr)));
+        const software = isSoftwareRenderer(name);
+        log.info("OpenGL renderer={s} software={}", .{ name, software });
+        self.software_renderer.store(software, .release);
+    }
+
     if (self.robust) {
         const proc = gl.egl.getProcAddress("glGetGraphicsResetStatus") orelse
             gl.egl.getProcAddress("glGetGraphicsResetStatusARB");
@@ -243,12 +267,56 @@ pub fn threadEnter(self: *OpenGL, surface: *apprt.Surface) !void {
     }
 }
 
+/// Whether the GL_RENDERER string names a CPU rasterizer.
+fn isSoftwareRenderer(name: []const u8) bool {
+    const needles = [_][]const u8{
+        "llvmpipe",
+        "softpipe",
+        "swrast",
+        "SwiftShader",
+        "Software Rasterizer",
+        // WARP, the D3D12 software adapter used by WSL without a GPU.
+        "Microsoft Basic Render Driver",
+    };
+    for (needles) |needle| {
+        if (std.ascii.findIgnoreCase(name, needle) != null) return true;
+    }
+    return false;
+}
+
+/// True if the GL implementation rasterizes on the CPU. Thread-safe.
+pub fn isSoftwareRendering(self: *const OpenGL) bool {
+    return self.software_renderer.load(.acquire);
+}
+
 /// Callback called by renderer.Thread when it exits. Called on the render
 /// thread; unbinds the context from this thread so it can be destroyed on
 /// the main thread.
 pub fn threadExit(self: *OpenGL) void {
+    self.releaseExportPool();
     self.device.display.releaseCurrent();
     gl.glad.unload();
+}
+
+/// Called by renderer.Thread when it starts the main loop. A starved
+/// export pool wakes up the render thread through `wakeup` when the
+/// apprt releases a texture.
+pub fn setExportWakeup(self: *OpenGL, wakeup: ?*xev.Async) void {
+    self.export_pool.setWakeup(wakeup);
+}
+
+/// Free all export textures. Textures still held by the apprt are
+/// never written again; the apprt's import keeps their memory alive.
+/// Must be called on the render thread with the context current.
+pub fn releaseExportPool(self: *OpenGL) void {
+    self.export_pool.deinit();
+}
+
+/// True if the last frame couldn't be exported because all export
+/// textures were held by the apprt, so it should be redrawn as soon
+/// as one is released.
+pub fn needsRedraw(self: *const OpenGL) bool {
+    return self.export_pool.starved;
 }
 
 /// Get the current size of the runtime surface.
@@ -365,12 +433,39 @@ pub fn present(
 ) !ExportedFrame {
     // We only export DMABUFs when the apprt can present them.
     // Otherwise, use CPU buffers.
-    if (presentation_health == .healthy) {
-        if (target.exportDmabuf(self.device.display, self.egl_context)) |dmabuf| {
-            return .{ .dmabuf = dmabuf };
-        } else |_| {
+    var cpu_reason: ExportedFrame.Memory.Reason = .unhealthy;
+    if (presentation_health == .healthy) dmabuf: {
+        cpu_reason = .export_failed;
+        const slot = self.export_pool.acquire(
+            @intCast(target.width),
+            @intCast(target.height),
+        ) catch |err| {
+            log.warn("failed to create export texture, falling back to CPU presentation err={}", .{err});
+            break :dmabuf;
+        } orelse {
+            // The apprt still holds every export texture. Don't block
+            // the render thread; present this frame from CPU memory.
+            cpu_reason = .buffers_busy;
+            self.export_starved_count += 1;
+            if (std.math.isPowerOfTwo(self.export_starved_count)) log.debug(
+                "all export textures busy, using CPU presentation count={} busy={}",
+                .{ self.export_starved_count, self.export_pool.busyCount() },
+            );
+            break :dmabuf;
+        };
+
+        var dmabuf = target.exportDmabuf(
+            self.device.display,
+            self.egl_context,
+            &slot.resource,
+        ) catch {
+            // The apprt never gets the frame, so release it ourselves.
+            slot.token.?.release();
             log.warn("failed to export DMABUF, falling back to CPU presentation", .{});
-        }
+            break :dmabuf;
+        };
+        dmabuf.release = slot.token;
+        return .{ .dmabuf = dmabuf };
     }
 
     return .{ .memory = .{
@@ -378,6 +473,7 @@ pub fn present(
         .height = @intCast(target.height),
         .pixels = try target.readPixelsAlloc(self.alloc),
         .alloc = self.alloc,
+        .reason = cpu_reason,
     } };
 }
 
@@ -393,6 +489,21 @@ pub const ExportedFrame = union(enum) {
         height: u32,
         pixels: []u8,
         alloc: Allocator,
+
+        /// Why this frame wasn't exported as a DMABUF.
+        reason: Reason,
+
+        pub const Reason = enum {
+            /// The apprt asked for CPU frames, e.g. it can't import
+            /// our DMABUFs.
+            unhealthy,
+
+            /// Exporting the DMABUF failed.
+            export_failed,
+
+            /// The apprt still holds every export buffer.
+            buffers_busy,
+        };
 
         pub fn deinit(self: Memory) void {
             self.alloc.free(self.pixels);
@@ -530,4 +641,12 @@ pub inline fn beginFrame(
 ) !Frame {
     _ = self;
     return try Frame.begin(.{}, renderer, target);
+}
+
+test isSoftwareRenderer {
+    const testing = std.testing;
+    try testing.expect(isSoftwareRenderer("llvmpipe (LLVM 19.1.7, 256 bits)"));
+    try testing.expect(isSoftwareRenderer("D3D12 (Microsoft Basic Render Driver)"));
+    try testing.expect(!isSoftwareRenderer("D3D12 (NVIDIA GeForce RTX 4070)"));
+    try testing.expect(!isSoftwareRenderer("AMD Radeon Graphics (radeonsi, gfx1103_r1, LLVM 19.1.7, DRM 3.59, 6.12.6)"));
 }

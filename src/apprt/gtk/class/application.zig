@@ -906,7 +906,7 @@ pub const Application = extern struct {
         const priv = self.private();
         priv.restart_timer = 0;
 
-        var opts: restart_in_place.ExecOptions = .{};
+        var opts: restart_in_place.ExecOptions = .{ .gpu_reset = priv.restart_auto };
         if (priv.restart_auto) {
             const now = std.Io.Clock.real.now(global.io()).toSeconds();
             opts.counter = priv.restart_counter.next(now) orelse {

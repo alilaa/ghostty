@@ -9,6 +9,7 @@
 //! implementations.
 pub const Dmabuf = @This();
 pub const std = @import("std");
+const ReleaseToken = @import("ReleaseToken.zig");
 
 /// The maximum number of planes in a DMABUF that we support.
 /// This matches the maximum found in apprts such as GTK.
@@ -35,6 +36,11 @@ premultiplied: bool,
 /// and must either call `deinit` manually, or pass them to an apprt
 /// that consumes them.
 planes: Planes,
+
+/// If set, the exporter won't write to the underlying buffer until
+/// this is released. Released by `deinit`, so the consumer must keep
+/// the DMABUF alive until it no longer reads from it.
+release: ?*ReleaseToken = null,
 
 pub const Planes = struct {
     /// Number of planes. Valid planes are `planes[0..count]`.
@@ -70,6 +76,8 @@ pub const Planes = struct {
     }
 };
 
+/// Close the fds and release the buffer back to the exporter.
 pub fn deinit(self: Dmabuf) void {
     self.planes.deinit();
+    if (self.release) |token| token.release();
 }

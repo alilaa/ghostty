@@ -13,7 +13,6 @@ const CoreSurface = @import("../../../Surface.zig");
 const rendererpkg = @import("../../../renderer.zig");
 const ExportedFrame = rendererpkg.Renderer.ExportedFrame;
 const Dmabuf = @import("../../../renderer/Dmabuf.zig");
-const Planes = Dmabuf.Planes;
 
 const log = std.log.scoped(.gtk_render_surface);
 
@@ -72,13 +71,68 @@ pub const RenderSurface = extern struct {
         /// One-shot so we log the first real allocation, not every size-allocate.
         scale_logged_size: bool = false,
 
+        /// Pending `cpu-fallback` emission while frames arrive via CPU
+        /// memory instead of DMABUFs. Cancelled by the next DMABUF frame,
+        /// so short fallbacks (e.g. while resizing) are not reported.
+        cpu_timer: c_uint = 0,
+
+        /// Why the most recent frame came from CPU memory.
+        cpu_reason: ExportedFrame.Memory.Reason = .unhealthy,
+
+        /// Whether the current CPU fallback was already reported.
+        cpu_reported: bool = false,
+
+        /// When we last reported a CPU fallback, in seconds on the
+        /// awake clock, so a flapping fallback doesn't spam the user.
+        cpu_reported_at: ?i64 = null,
+
         pub var offset: c_int = 0;
     };
 
     const private = C.private;
     pub const as = C.as;
 
+    /// Why frames are produced or presented on the CPU. Passed as
+    /// `c_uint` with the `cpu-rendering` signal.
+    pub const CpuRendering = enum(c_uint) {
+        /// DMABUFs can't be used, frames are copied through CPU memory.
+        unshareable,
+
+        /// The compositor holds all of our DMABUFs, frames are copied
+        /// through CPU memory until it releases one.
+        buffers_busy,
+
+        /// The GL implementation rasterizes on the CPU (no GPU driver).
+        software,
+    };
+
+    /// Whether we already reported a software renderer. Reported once
+    /// per process since every surface shares the same driver.
+    var software_reported = false;
+
+    /// How long frames must keep coming from CPU memory before we
+    /// report it.
+    const cpu_report_delay_ms = 1000;
+
+    /// The minimum time between two reports.
+    const cpu_report_cooldown_s = 60;
+
     pub const signals = struct {
+        /// Emitted when rendering or presenting happens on the CPU:
+        /// once when the renderer is a software rasterizer, or when
+        /// frames have been presented via CPU readback instead of
+        /// DMABUFs for a while. The argument is a `CpuRendering`.
+        pub const @"cpu-rendering" = struct {
+            pub const name = "cpu-rendering";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{c_uint},
+                void,
+            );
+        };
+
         pub const resize = struct {
             pub const name = "resize";
             const impl = gobject.ext.defineSignal(
@@ -110,6 +164,7 @@ pub const RenderSurface = extern struct {
         const priv = self.private();
 
         self.disconnectScaleNotify();
+        self.cpuFallbackEnded();
 
         if (priv.texture) |tex| {
             tex.as(gobject.Object).unref();
@@ -154,6 +209,17 @@ pub const RenderSurface = extern struct {
         // still unconsumed in the queue, but not the texture we're
         // currently displaying.
         if (priv.core_surface) |core| {
+            if (!software_reported and core.renderer.isSoftwareRendering()) {
+                software_reported = true;
+                log.warn("OpenGL is rasterizing on the CPU, no GPU acceleration", .{});
+                signals.@"cpu-rendering".impl.emit(
+                    self,
+                    null,
+                    .{@backingInt(CpuRendering.software)},
+                    null,
+                );
+            }
+
             if (core.renderer.takeFrame()) |frame| {
                 self.rebuildTexture(frame) catch |err| switch (err) {
                     // GTK can't import our DMABUFs, e.g. due to an
@@ -306,9 +372,63 @@ pub const RenderSurface = extern struct {
     /// texture, unrefing any previous texture.
     fn rebuildTexture(self: *Self, frame: ExportedFrame) !void {
         switch (frame) {
-            .dmabuf => |dmabuf| try self.rebuildDmabufTexture(dmabuf),
-            .memory => |memory| try self.rebuildMemoryTexture(memory),
+            .dmabuf => |dmabuf| {
+                self.cpuFallbackEnded();
+                try self.rebuildDmabufTexture(dmabuf);
+            },
+            .memory => |memory| {
+                self.cpuFallbackFrame(memory.reason);
+                try self.rebuildMemoryTexture(memory);
+            },
         }
+    }
+
+    /// Called for every frame presented from CPU memory. Reports the
+    /// fallback once it lasted `cpu_report_delay_ms`.
+    fn cpuFallbackFrame(self: *Self, reason: ExportedFrame.Memory.Reason) void {
+        const priv = self.private();
+        priv.cpu_reason = reason;
+        if (priv.cpu_reported or priv.cpu_timer != 0) return;
+        priv.cpu_timer = glib.timeoutAdd(cpu_report_delay_ms, cpuFallbackTimer, self);
+    }
+
+    /// Called for every DMABUF frame: the CPU fallback, if any, is over.
+    fn cpuFallbackEnded(self: *Self) void {
+        const priv = self.private();
+        priv.cpu_reported = false;
+        if (priv.cpu_timer != 0) {
+            if (glib.Source.remove(priv.cpu_timer) == 0) {
+                log.warn("unable to remove cpu fallback timer", .{});
+            }
+            priv.cpu_timer = 0;
+        }
+    }
+
+    fn cpuFallbackTimer(ud: ?*anyopaque) callconv(.c) c_int {
+        const self: *Self = @ptrCast(@alignCast(ud orelse return 0));
+        const priv = self.private();
+        priv.cpu_timer = 0;
+        priv.cpu_reported = true;
+
+        log.info("presenting via CPU readback reason={t}", .{priv.cpu_reason});
+
+        const now = std.Io.Clock.awake.now(global.io()).toSeconds();
+        if (priv.cpu_reported_at) |last| {
+            if (now - last < cpu_report_cooldown_s) return 0;
+        }
+        priv.cpu_reported_at = now;
+
+        const kind: CpuRendering = switch (priv.cpu_reason) {
+            .buffers_busy => .buffers_busy,
+            .unhealthy, .export_failed => .unshareable,
+        };
+        signals.@"cpu-rendering".impl.emit(
+            self,
+            null,
+            .{@backingInt(kind)},
+            null,
+        );
+        return 0;
     }
 
     /// Build a `GdkDmabufTexture` from the present and set it as our
@@ -336,22 +456,27 @@ pub const RenderSurface = extern struct {
         }
 
         // Build the texture. We retain ownership over the DMABUF FDs
-        // until the asynchronous texture building process is complete,
-        // so we have to make a heap copy of them, send them to GTK,
-        // and then destroy them once successful.
+        // and its release token for as long as GTK uses the texture,
+        // so we have to make a heap copy and send it to GTK, which
+        // calls `dmabufDestroy` once the texture is finalized. With
+        // graphics offload that's after the compositor released the
+        // buffer, so the renderer may then overwrite it.
         const app = Application.default();
         const alloc = app.allocator();
 
-        const planes = try alloc.create(Planes);
-        errdefer alloc.destroy(planes);
+        const holder = alloc.create(Dmabuf) catch |err| {
+            frame.deinit();
+            return err;
+        };
+        errdefer alloc.destroy(holder);
 
-        planes.* = frame.planes;
-        errdefer planes.deinit();
+        holder.* = frame;
+        errdefer holder.deinit();
 
         var err_: ?*glib.Error = null;
         const texture = builder.build(
             dmabufDestroy,
-            planes,
+            holder,
             &err_,
         ) orelse {
             if (err_) |err|
@@ -365,14 +490,15 @@ pub const RenderSurface = extern struct {
     }
 
     /// Destroy callback for `GdkDmabufTexture`. GDK calls this when the
-    /// texture is released; we close the FDs and free the holder.
+    /// texture is released; we close the FDs, release the buffer back
+    /// to the renderer and free the holder.
     fn dmabufDestroy(data: ?*anyopaque) callconv(.c) void {
         const app = Application.default();
         const alloc = app.allocator();
 
-        const planes: *Planes = @ptrCast(@alignCast(data orelse return));
-        planes.deinit();
-        alloc.destroy(planes);
+        const holder: *Dmabuf = @ptrCast(@alignCast(data orelse return));
+        holder.deinit();
+        alloc.destroy(holder);
     }
 
     /// Holder for the pixel data backing a `GdkMemoryTexture`. GTK
@@ -452,6 +578,7 @@ pub const RenderSurface = extern struct {
 
             // Signals
             signals.resize.impl.register(.{});
+            signals.@"cpu-rendering".impl.register(.{});
         }
 
         pub const as = C.Class.as;

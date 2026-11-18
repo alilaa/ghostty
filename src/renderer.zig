@@ -59,6 +59,7 @@ pub const Health = enum(c_int) {
 test {
     // Our comptime-chosen renderer
     _ = Renderer;
+    _ = GraphicsAPI;
 
     _ = cursor;
     _ = message;
@@ -66,4 +67,6 @@ test {
     _ = size;
     _ = Thread;
     _ = State;
+    _ = @import("renderer/ReleaseToken.zig");
+    _ = @import("renderer/export_pool.zig");
 }

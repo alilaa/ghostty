@@ -26,6 +26,8 @@ pub const guard_window_s = 60;
 pub const Snapshot = struct {
     version: u32 = version,
     focused_window: ?u32 = null,
+    /// The restart was triggered automatically to recover from a GPU reset.
+    gpu_reset: bool = false,
     windows: []const Window = &.{},
     surfaces: []const Surface = &.{},
 };
@@ -197,6 +199,7 @@ test "restart snapshot JSON round-trip" {
 
     const snapshot: Snapshot = .{
         .focused_window = 0,
+        .gpu_reset = true,
         .windows = &.{.{
             .width = 800,
             .height = 600,

@@ -24,6 +24,7 @@ const Application = @import("application.zig").Application;
 const CloseConfirmationDialog = @import("close_confirmation_dialog.zig").CloseConfirmationDialog;
 const SplitTree = @import("split_tree.zig").SplitTree;
 const Surface = @import("surface.zig").Surface;
+const RenderSurface = @import("render_surface.zig").RenderSurface;
 const Tab = @import("tab.zig").Tab;
 const DebugWarning = @import("debug_warning.zig").DebugWarning;
 const CommandPalette = @import("command_palette.zig").CommandPalette;
@@ -876,6 +877,13 @@ pub const Window = extern struct {
                 surface,
                 *Self,
                 surfaceClipboardWrite,
+                self,
+                .{},
+            );
+            _ = Surface.signals.@"cpu-rendering".connect(
+                surface,
+                *Self,
+                surfaceCpuRendering,
                 self,
                 .{},
             );
@@ -1977,6 +1985,33 @@ pub const Window = extern struct {
             self.addToast(i18n._("Copied to clipboard"))
         else
             self.addToast(i18n._("Cleared clipboard"));
+    }
+
+    fn surfaceCpuRendering(
+        _: *Surface,
+        kind: c_uint,
+        self: *Self,
+    ) callconv(.c) void {
+        const priv = self.private();
+        const config_obj = priv.config orelse return;
+        if (!config_obj.get().@"app-notifications".@"cpu-rendering") return;
+
+        const CpuRendering = RenderSurface.CpuRendering;
+        const value = std.enums.fromInt(CpuRendering, kind) orelse return;
+        self.addToast(switch (value) {
+            .unshareable => i18n._("Rendering on CPU: GPU buffers can't be shared"),
+            .buffers_busy => i18n._("Rendering on CPU: the compositor is holding all GPU buffers"),
+            .software => i18n._("No GPU acceleration: rendering in software"),
+        });
+    }
+
+    /// Tell the user that we restarted to recover from a GPU reset.
+    /// Called on the restored window that gets focus.
+    pub fn notifyGpuResetRecovered(self: *Self) void {
+        const priv = self.private();
+        const config_obj = priv.config orelse return;
+        if (!config_obj.get().@"app-notifications".@"gpu-reset") return;
+        self.addToast(i18n._("Recovered from a GPU reset"));
     }
 
     fn surfaceMenu(

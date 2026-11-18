@@ -502,6 +502,19 @@ pub const Surface = extern struct {
             );
         };
 
+        /// Emitted when rendering or presenting happens on the CPU.
+        /// The argument is a `RenderSurface.CpuRendering`.
+        pub const @"cpu-rendering" = struct {
+            pub const name = "cpu-rendering";
+            pub const connect = impl.connect;
+            const impl = gobject.ext.defineSignal(
+                name,
+                Self,
+                &.{c_uint},
+                void,
+            );
+        };
+
         /// Emitted whenever the clipboard has been written. The string
         /// is the text representation of the written contents, empty
         /// when there is none (e.g. an image-only Kitty clipboard
@@ -3661,6 +3674,14 @@ pub const Surface = extern struct {
         return window.isSuspended() != 0;
     }
 
+    fn renderSurfaceCpuRendering(
+        _: *RenderSurface,
+        kind: c_uint,
+        self: *Self,
+    ) callconv(.c) void {
+        signals.@"cpu-rendering".impl.emit(self, null, .{kind}, null);
+    }
+
     fn renderSurfaceResize(
         _: *RenderSurface,
         width: c_int,
@@ -4144,6 +4165,7 @@ pub const Surface = extern struct {
             class.bindTemplateCallback("render_surface_map", &renderSurfaceMap);
             class.bindTemplateCallback("render_surface_unmap", &renderSurfaceUnmap);
             class.bindTemplateCallback("render_surface_resize", &renderSurfaceResize);
+            class.bindTemplateCallback("render_surface_cpu_rendering", &renderSurfaceCpuRendering);
             class.bindTemplateCallback("im_preedit_start", &imPreeditStart);
             class.bindTemplateCallback("im_preedit_changed", &imPreeditChanged);
             class.bindTemplateCallback("im_preedit_end", &imPreeditEnd);
@@ -4208,6 +4230,7 @@ pub const Surface = extern struct {
             signals.@"close-request".impl.register(.{});
             signals.@"clipboard-read".impl.register(.{});
             signals.@"clipboard-write".impl.register(.{});
+            signals.@"cpu-rendering".impl.register(.{});
             signals.init.impl.register(.{});
             signals.menu.impl.register(.{});
             signals.@"present-request".impl.register(.{});

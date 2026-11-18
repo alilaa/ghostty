@@ -3350,6 +3350,14 @@ keybind: Keybinds = .{},
 ///     to the clipboard.
 ///   - `config-reload` (default: true) - Show a notification when
 ///     the configuration is reloaded.
+///   - `gpu-reset` (default: true) - Show a notification after an
+///     automatic restart recovered from a GPU reset. See
+///     `gpu-reset-action`.
+///   - `cpu-rendering` (default: true) - Show a notification when
+///     OpenGL has no GPU acceleration (a software rasterizer such as
+///     llvmpipe), or when a terminal has been presenting frames through
+///     CPU memory instead of shared GPU buffers for more than a second.
+///     Both are slower than normal.
 ///
 /// To specify a notification to enable, specify the name of the notification.
 /// To specify a notification to disable, prefix the name with `no-`. For
@@ -9398,6 +9406,8 @@ pub const GtkTitlebarStyle = enum(c_int) {
 pub const AppNotifications = packed struct {
     @"clipboard-copy": bool = true,
     @"config-reload": bool = true,
+    @"gpu-reset": bool = true,
+    @"cpu-rendering": bool = true,
 };
 
 /// See bell-features

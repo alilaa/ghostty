@@ -954,6 +954,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 self.api.loopEnter();
             }
 
+            // Redraw when the apprt releases an exported frame we
+            // were waiting for.
+            if (@hasDecl(GraphicsAPI, "setExportWakeup")) {
+                self.api.setExportWakeup(&thr.wakeup);
+            }
+
             // If we don't support a display link we have no work to do.
             if (comptime DisplayLink == void) return;
 
@@ -965,6 +971,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             // If our API has to do things on loop exit, let it.
             if (@hasDecl(GraphicsAPI, "loopExit")) {
                 self.api.loopExit();
+            }
+
+            if (@hasDecl(GraphicsAPI, "setExportWakeup")) {
+                self.api.setExportWakeup(null);
             }
 
             // If we don't support a display link we have no work to do.
@@ -1064,6 +1074,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// (i.e. `ExportedFrame == void`).
         pub fn pushFrame(self: *Self, frame: ExportedFrame) void {
             return self.latest_frame.push(global.io(), frame);
+        }
+
+        /// True if the graphics API rasterizes on the CPU, e.g. Mesa's
+        /// llvmpipe when no GPU driver is available. Thread-safe.
+        pub fn isSoftwareRendering(self: *const Self) bool {
+            if (comptime !@hasDecl(GraphicsAPI, "isSoftwareRendering")) return false;
+            return self.api.isSoftwareRendering();
         }
 
         /// Take the latest completed frame for the apprt to composite.
@@ -1268,6 +1285,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                 // frees all GPU resources.
                 sc.deinit();
                 self.swap_chain = null;
+            }
+
+            // Exported frames the apprt may hold indefinitely while
+            // hidden. We don't wait for them; they're never written again.
+            if (@hasDecl(GraphicsAPI, "releaseExportPool")) {
+                self.api.releaseExportPool();
             }
 
             // Release the shaders as well if we're unrealized.
@@ -1819,12 +1842,17 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             //
             // While any animation is in progress (a pending animation wake)
             // every draw must actually render.
+            const api_needs_redraw = if (comptime @hasDecl(GraphicsAPI, "needsRedraw"))
+                self.api.needsRedraw()
+            else
+                false;
             const needs_redraw =
                 size_changed or
                 swap_chain_rebuilt or
                 self.cells_rebuilt or
                 self.images_rebuilt or
                 self.animationWake() != null or
+                api_needs_redraw or
                 sync;
 
             if (!needs_redraw) {
